@@ -5,7 +5,7 @@ const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const { buildRoute } = require('./lib/gpx');
-const { tileHandler, MOCK: TILE_MOCK, setMockRoutes } = require('./lib/tiles');
+const { tileHandler, MOCK: TILE_MOCK, setMockRoutes, lidarEnabled } = require('./lib/tiles');
 
 const PORT = process.env.PORT || 3000;
 const ROUTES_DIR = path.join(__dirname, 'routes');
@@ -64,7 +64,7 @@ app.get('/api/config', (_req, res) => {
       credential: process.env.TURN_CREDENTIAL,
     });
   }
-  res.json({ iceServers });
+  res.json({ iceServers, lidar: lidarEnabled() });
 });
 app.get('/tiles/:src/:z/:x/:y', tileHandler);
 app.get('/healthz', (_req, res) => res.send('ok'));

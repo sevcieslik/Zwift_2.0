@@ -44,7 +44,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   $('roomCode').textContent = room.code;
   $('sDistTotal').textContent = '/ ' + (route.total / 1000).toFixed(1) + ' km';
 
-  const world = new World($('view'), route);
+  const world = new World($('view'), route, { lidar: config.lidar });
   const track = world.track;
   const profileHud = new Profile($('profile'), route);
   const minimap = new MiniMap($('minimap'), route);

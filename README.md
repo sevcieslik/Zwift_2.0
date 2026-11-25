@@ -38,7 +38,8 @@ Gra liczy jazdę także wtedy, gdy karta jest w tle, ale najlepiej trzymać ją 
 
 Teren 3D buduje się z prawdziwych danych dla okolicy trasy:
 
-- **Wysokość:** [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen, AWS Open Data). W Wielkiej Brytanii rozdzielczość wynosi ok. 30 m.
+- **Wysokość w Walii: lidar 1 m.** Numeryczny model terenu Welsh Government / Natural Resources Wales (Open Government Licence v3.0), jeden plik COG dla całej Walii. Serwer czyta z niego tylko fragmenty wokół kolarza (zapytania HTTP o zakres bajtów) i przelicza je na kafle mapy.
+- **Wysokość poza Walią** (albo gdy lidar jest niedostępny): [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen, AWS Open Data), rozdzielczość ok. 30 m.
 - **Wygląd terenu:** zdjęcia satelitarne [Sentinel-2 cloudless](https://s2maps.eu) od EOX, na licencji CC BY-NC-SA 4.0, czyli tylko do użytku niekomercyjnego (klubowy użytek jest OK). Drzewa stoją tam, gdzie zdjęcia pokazują las.
 - **Dopasowanie do drogi:** droga zachowuje wysokość z pliku GPX, a teren jest do niej wyrównywany. Liczona jest różnica między GPX a mapą wysokości wzdłuż trasy.
 - **Plan bliski i daleki:** szczegółowy teren ok. 3 km wokół kolarza i daleki plan do ok. 20 km (góry na horyzoncie).
@@ -49,6 +50,7 @@ Zmienne środowiskowe (opcjonalne):
 
 | Zmienna | Znaczenie |
 |---|---|
+| `LIDAR_COG_URL` | Plik lidarowy COG w układzie EPSG:27700 (domyślnie walijski DTM 1 m; pusta wartość wyłącza lidar) |
 | `ELEV_TILES_URL` | Inne źródło kafli wysokości w formacie Terrarium (`{z}/{x}/{y}`) |
 | `SAT_TILES_URL` | Inne źródło zdjęć satelitarnych (`{z}/{x}/{y}`) |
 | `TILE_CACHE_DIR` | Katalog pamięci podręcznej kafli (domyślnie katalog tymczasowy) |
@@ -108,5 +110,6 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/rider.js` | Model kolarza i roweru (nogi na pedałach liczone na bieżąco) |
 | `public/js/terrain.js` | Teren z danych wysokościowych i zdjęć satelitarnych, drzewa |
 | `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |
+| `lib/lidar.js`, `lib/bng.js` | Kafle wysokości z lidaru (COG) i przeliczanie GPS → brytyjski układ współrzędnych |
 
 Prędkość w grze wynika z mocy z trenera i nachylenia trasy, tak jak w Zwifcie. Prędkość podawana przez sam trener jest ignorowana.

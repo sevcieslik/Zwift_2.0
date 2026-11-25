@@ -82,7 +82,7 @@ export { RiderModel };
 
 // ---------- World ----------
 export class World {
-  constructor(canvas, route) {
+  constructor(canvas, route, opts = {}) {
     this.track = new Track(route);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
@@ -108,7 +108,7 @@ export class World {
 
     this._buildIndex();
     this._buildRoad();
-    this.terrain = new Terrain(this.scene, this.track, (x, z) => this.nearest(x, z));
+    this.terrain = new Terrain(this.scene, this.track, (x, z, lim) => this.nearest(x, z, lim), { lidar: opts.lidar });
     this.riders = new Map();
     this.camPos = null;
     this.resize();

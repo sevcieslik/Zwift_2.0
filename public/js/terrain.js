@@ -71,8 +71,12 @@ function terrainMaterial(map, detail) {
 }
 
 export class Terrain {
-  constructor(scene, track, nearestFn) {
+  constructor(scene, track, nearestFn, opts = {}) {
     this.cand = [];
+    this.lidar = !!opts.lidar;
+    this.nearSrc = this.lidar ? 'lidar' : 'elev';
+    this.nearZ = this.lidar ? 15 : NEAR.elevZ;
+    this.nearSeg = this.lidar ? 340 : NEAR.seg;
     this.scene = scene;
     this.track = track;
     this.nearest = nearestFn;
@@ -107,7 +111,8 @@ export class Terrain {
       if (Number.isFinite(dem)) { raw[i] = dem - (r.ele[i] - this.base); any = true; }
     }
     if (!any) return;
-    const W = Math.max(2, Math.round(750 / this.track.step));
+    // LiDAR is accurate, so follow it closely; with 30 m data only correct the overall level
+    const W = Math.max(2, Math.round((this.lidar && this.nearSampler === sampler ? 200 : 750) / this.track.step));
     // prefix sums over finite values
     const sum = new Float64Array(n + 1), cnt = new Float64Array(n + 1);
     for (let i = 0; i < n; i++) {
@@ -145,10 +150,10 @@ export class Terrain {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return createImageBitmap(await res.blob());
   }
-  _elevTile(z, x, y) {
-    const key = `${z}/${x}/${y}`;
+  _elevTile(src, z, x, y) {
+    const key = `${src}/${z}/${x}/${y}`;
     if (!this.elevCache.has(key)) {
-      this.elevCache.set(key, this._img(`/tiles/elev/${key}`).then((bmp) => {
+      this.elevCache.set(key, this._img(`/tiles/${key}`).then((bmp) => {
         const c = document.createElement('canvas'); c.width = c.height = 256;
         const g = c.getContext('2d', { willReadFrequently: true });
         g.drawImage(bmp, 0, 0);
@@ -175,12 +180,12 @@ export class Terrain {
   }
 
   /** Load elevation for an area; returns sampler(x, z) -> world height or NaN. */
-  async _elevSampler(cx, cz, size, z) {
+  async _elevSampler(cx, cz, size, z, src = 'elev') {
     const r = this._tileRange(cx, cz, size + 200, z);
     const tiles = new Map();
     const jobs = [];
     for (let ty = r.y0; ty <= r.y1; ty++) for (let tx = r.x0; tx <= r.x1; tx++) {
-      jobs.push(this._elevTile(z, tx, ty).then((d) => tiles.set(tx * 100000 + ty, d)));
+      jobs.push(this._elevTile(src, z, tx, ty).then((d) => tiles.set(tx * 100000 + ty, d)));
     }
     await Promise.all(jobs);
     if ([...tiles.values()].every((t) => !t)) return null;
@@ -321,7 +326,7 @@ export class Terrain {
           forest = fbm(x * 2.3, z * 2.3) > 0.05 && rnd() < 0.25;
         }
         if (!forest) continue;
-        const [d] = this.nearest(x, z);
+        const [d] = this.nearest(x, z, true);
         if (d < 12) continue;
         const h = heightFn(x, z);
         if (!Number.isFinite(h)) continue;
@@ -358,12 +363,13 @@ export class Terrain {
   }
 
   async _buildNear(cx, cz) {
-    const sampler = this.online ? await this._elevSampler(cx, cz, NEAR.size, NEAR.elevZ) : null;
+    const sampler = this.online ? await this._elevSampler(cx, cz, NEAR.size, this.nearZ, this.nearSrc) : null;
+    this.nearSampler = sampler;
     if (sampler) this._updateOffsets(sampler, cx, cz, NEAR.size);
     const sat = this.online && sampler ? await this._satCanvas(cx, cz, NEAR.size, NEAR.satZ) : null;
     this._setCandidates(cx, cz, NEAR.size);
     const heightFn = (x, z) => this._blend(x, z, sampler ? sampler(x, z) : NaN);
-    const geo = await this._grid(cx, cz, NEAR.size, NEAR.seg, heightFn, sat, (e, ny) => this._fallbackColor(e, ny));
+    const geo = await this._grid(cx, cz, NEAR.size, this.nearSeg, heightFn, sat, (e, ny) => this._fallbackColor(e, ny));
     let tex = null;
     if (sat) {
       tex = new THREE.CanvasTexture(sat.canvas);
