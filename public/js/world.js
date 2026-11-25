@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { kitMaterials } from './kits.js';
 
 // ---------- Route helpers ----------
 export class Track {
@@ -89,68 +90,108 @@ function grassTexture() {
 }
 
 // ---------- Rider model ----------
-function labelSprite(text, color) {
+function labelSprite(text, color, avatar) {
   const c = document.createElement('canvas');
-  c.width = 256; c.height = 64;
+  c.width = 384; c.height = 80;
   const g = c.getContext('2d');
-  g.fillStyle = 'rgba(0,0,0,0.55)';
-  g.beginPath(); g.roundRect(4, 8, 248, 48, 12); g.fill();
-  g.fillStyle = color; g.fillRect(14, 22, 20, 20);
-  g.fillStyle = '#fff'; g.font = 'bold 28px system-ui, sans-serif'; g.textBaseline = 'middle';
-  g.fillText(text.slice(0, 14), 44, 33);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
-  s.scale.set(2.4, 0.6, 1);
+  g.font = 'bold 34px system-ui, sans-serif';
+  const label = `${avatar || ''} ${text.slice(0, 14)}`.trim();
+  const w = Math.min(376, g.measureText(label).width + 48);
+  const x0 = (384 - w) / 2;
+  g.fillStyle = 'rgba(0,0,0,0.6)';
+  g.beginPath(); g.roundRect(x0, 8, w, 60, 14); g.fill();
+  g.fillStyle = color; g.fillRect(x0, 62, w, 6);
+  g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.textAlign = 'center';
+  g.fillText(label, 192, 38);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
   s.renderOrder = 10;
   return s;
 }
 
-class RiderModel {
-  constructor(color, name, showLabel) {
-    this.group = new THREE.Group();
-    const jersey = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0xe0b090, roughness: 0.8 });
-    const frameM = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.4, roughness: 0.4 });
+const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...opts });
+function cyl(r1, r2, len, m) { return new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 8), m); }
 
-    const wheelGeo = new THREE.TorusGeometry(0.34, 0.025, 8, 28);
+/** Low-poly cyclist. Forward = +Z. appearance: see profile.js */
+export class RiderModel {
+  constructor(appearance, name, { label = true, heightCm = 178 } = {}) {
+    const a = appearance;
+    this.group = new THREE.Group();
+    const body = new THREE.Group(); // scaled by height
+    this.group.add(body);
+    const jersey = mat(a.jersey), shorts = mat(a.shorts), socks = mat(a.socks), skin = mat(a.skin, { roughness: 0.8 });
+    const head = mat(a.headColor), frameM = mat(a.frame, { metalness: 0.5, roughness: 0.35 });
+    const black = mat(0x1a1a1a, { roughness: 0.5 }), shoe = mat(0xf2f2f2);
+    const kit = kitMaterials(a.kit);
+
+    // Bike
+    const wheelGeo = new THREE.TorusGeometry(0.34, 0.028, 8, 32);
+    const rimGeo = new THREE.TorusGeometry(0.3, 0.012, 6, 32);
     this.wheels = [];
     for (const z of [-0.52, 0.52]) {
-      const w = new THREE.Mesh(wheelGeo, dark);
+      const w = new THREE.Group();
+      w.add(new THREE.Mesh(wheelGeo, black));
+      w.add(new THREE.Mesh(rimGeo, frameM));
       w.rotation.y = Math.PI / 2; w.position.set(0, 0.34, z);
       this.group.add(w); this.wheels.push(w);
     }
-    const tube = (len, x, y, z, rx) => {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, len, 6), frameM);
-      m.position.set(x, y, z); m.rotation.x = rx; this.group.add(m);
+    const tube = (len, x, y, z, rx, m = frameM, r = 0.022) => {
+      const t = cyl(r, r, len, m); t.position.set(x, y, z); t.rotation.x = rx; this.group.add(t); return t;
     };
-    tube(0.62, 0, 0.62, 0.1, 1.2);
-    tube(0.55, 0, 0.55, -0.22, -0.3);
-    tube(0.6, 0, 0.42, -0.25, 1.35);
-    tube(0.5, 0, 0.5, 0.46, -0.25);
+    tube(0.62, 0, 0.66, 0.08, 1.33);      // top tube
+    tube(0.68, 0, 0.5, 0.1, 0.85);         // down tube
+    tube(0.55, 0, 0.6, -0.2, -0.3);        // seat tube
+    tube(0.48, 0, 0.36, -0.3, 1.45);       // chain stay
+    tube(0.48, 0, 0.55, 0.48, -0.25);      // fork
+    tube(0.36, 0, 0.88, 0.47, Math.PI / 2, black, 0.018); // bars
+    const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.26), black);
+    saddle.position.set(0, 0.89, -0.28); this.group.add(saddle);
 
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.62), jersey);
-    torso.position.set(0, 1.12, 0.05); torso.rotation.x = -0.45;
-    this.group.add(torso);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), skin);
-    head.position.set(0, 1.32, 0.42); this.group.add(head);
-    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.135, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), jersey);
-    helmet.position.copy(head.position); helmet.position.y += 0.02; this.group.add(helmet);
-    for (const x of [-0.14, 0.14]) {
-      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.55, 6), skin);
-      arm.position.set(x, 1.02, 0.42); arm.rotation.x = 0.7; this.group.add(arm);
+    // Rider (scaled by height relative to 178 cm)
+    const s = Math.max(0.85, Math.min(1.15, heightCm / 178));
+    this.bodyScale = 1;
+    body.scale.setScalar(s);
+    body.position.y = 0.9 * (1 - s); // keep hips on the saddle
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.62), kit ? kit.torso : jersey);
+    torso.position.set(0, 1.13, 0.02); torso.rotation.x = -0.45; body.add(torso);
+    const hips = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.2), kit ? kit.hips : shorts);
+    hips.position.set(0, 0.97, -0.22); body.add(hips);
+    const neck = cyl(0.05, 0.05, 0.1, skin); neck.position.set(0, 1.28, 0.33); body.add(neck);
+    const headM = new THREE.Mesh(new THREE.SphereGeometry(0.115, 14, 12), skin);
+    headM.position.set(0, 1.36, 0.42); body.add(headM);
+    if (a.headwear === 'cap') {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2.2), kit ? kit.cap : head);
+      cap.position.copy(headM.position); cap.position.y += 0.015; body.add(cap);
+      const brim = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.012, 0.09), kit ? kit.brim : head);
+      brim.position.set(0, 1.405, 0.555); brim.rotation.x = -0.25; body.add(brim);
+    } else {
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), kit ? kit.helmet : head);
+      helmet.scale.set(1, 0.9, 1.3); helmet.position.copy(headM.position); helmet.position.y += 0.02; body.add(helmet);
+    }
+    if (a.hair === 'ponytail') {
+      const pt = cyl(0.035, 0.02, 0.22, mat(a.hairColor));
+      pt.position.set(0, 1.33, 0.27); pt.rotation.x = 1.1; body.add(pt);
+    }
+    for (const x of [-0.16, 0.16]) {
+      const arm = new THREE.Group(); arm.position.set(x, 1.22, 0.3); arm.rotation.x = 0.75; body.add(arm);
+      const sleeve = cyl(0.05, 0.045, 0.16, kit ? kit.sleeve : jersey); sleeve.position.y = -0.08; arm.add(sleeve);
+      const fore = cyl(0.04, 0.035, 0.42, skin); fore.position.y = -0.36; arm.add(fore);
     }
     this.legs = [];
     for (const [x, ph] of [[-0.1, 0], [0.1, Math.PI]]) {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, 0.95, -0.2);
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.75, 6), dark);
-      leg.position.y = -0.36; pivot.add(leg);
-      this.group.add(pivot); this.legs.push({ pivot, ph });
+      const hip = new THREE.Group(); hip.position.set(x, 0.95, -0.22); body.add(hip);
+      const thigh = cyl(0.07, 0.055, 0.44, kit ? kit.shorts : shorts); thigh.position.y = -0.22; hip.add(thigh);
+      const knee = new THREE.Group(); knee.position.y = -0.44; hip.add(knee);
+      const shin = cyl(0.05, 0.04, 0.3, skin); shin.position.y = -0.15; knee.add(shin);
+      const sock = cyl(0.042, 0.038, 0.14, kit ? kit.socks : socks); sock.position.y = -0.36; knee.add(sock);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.2), shoe); foot.position.set(0, -0.45, 0.05); knee.add(foot);
+      this.legs.push({ hip, knee, ph });
     }
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    if (showLabel) {
-      this.label = labelSprite(name, color);
-      this.label.position.y = 2.0;
+    if (label) {
+      this.label = labelSprite(name, kit ? kit.color : a.jersey, a.avatar);
+      this.label.position.y = 2.1;
       this.group.add(this.label);
     }
     this.crank = 0;
@@ -159,7 +200,17 @@ class RiderModel {
     for (const w of this.wheels) w.rotation.x -= (speed / 0.34) * dt;
     const rpm = cadence > 0 ? cadence : speed > 0.5 ? 85 : 0;
     this.crank += (rpm / 60) * Math.PI * 2 * dt;
-    for (const { pivot, ph } of this.legs) pivot.rotation.x = Math.sin(this.crank + ph) * 0.45;
+    for (const { hip, knee, ph } of this.legs) {
+      const c = this.crank + ph;
+      hip.rotation.x = 0.55 + Math.sin(c) * 0.5;
+      knee.rotation.x = -0.9 + Math.cos(c) * 0.55;
+    }
+  }
+  dispose() {
+    this.group.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      for (const m of [].concat(o.material || [])) { if (m.map && !m.map.userData.shared) m.map.dispose(); m.dispose(); }
+    });
   }
 }
 
@@ -354,6 +405,8 @@ export class World {
     if (!this.terrainCenter || this.terrainCenter.x !== cx || this.terrainCenter.z !== cz) this._buildTerrain(cx, cz);
   }
 
+  resetCamera() { this.camPos = null; }
+
   _laneOffset(id) {
     let h = 0;
     for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
@@ -369,8 +422,11 @@ export class World {
     for (const rd of riders) {
       seen.add(rd.id);
       let m = this.riders.get(rd.id);
+      const key = rd.name + '|' + rd.height + '|' + JSON.stringify(rd.appearance);
+      if (m && m.key !== key) { this.scene.remove(m.group); m.dispose(); m = null; }
       if (!m) {
-        m = new RiderModel(rd.color, rd.name, !rd.me);
+        m = new RiderModel(rd.appearance, rd.name, { label: !rd.me, heightCm: rd.height });
+        m.key = key;
         this.riders.set(rd.id, m);
         this.scene.add(m.group);
       }
@@ -385,12 +441,14 @@ export class World {
       if (m.label) {
         const d = this.camPos ? this.camPos.distanceTo(m.group.position) : 99;
         m.label.visible = d > 9;
-        m.label.scale.set(2.4 * Math.max(1, d / 40), 0.6 * Math.max(1, d / 40), 1);
+        m.label.position.y = 2.1 + (Math.round(lane / 0.9 + 2) % 2) * 0.7 * Math.max(1, d / 25) / (m.bodyScale || 1);
+        const k = Math.max(1, d / 25);
+        m.label.scale.set(2.9 * k, 0.6 * k, 1);
       }
       if (rd.me) me = { s, m };
     }
     for (const [id, m] of this.riders) {
-      if (!seen.has(id)) { this.scene.remove(m.group); this.riders.delete(id); }
+      if (!seen.has(id)) { this.scene.remove(m.group); m.dispose(); this.riders.delete(id); }
     }
 
     if (me) {

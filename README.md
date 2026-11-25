@@ -12,13 +12,27 @@ Jazda po własnej trasie GPX w 3D, trochę jak w Zwifcie, razem ze znajomymi z k
 ## Jak jeździć
 
 1. Otwórz stronę w **Chrome lub Edge** na komputerze (Windows / macOS) albo w Chrome na Androidzie. Safari i iPhone nie obsługują Web Bluetooth.
-2. Wpisz imię, wagę i kod przejazdu (np. `wtorek-klub`), a potem kliknij **Jedziemy!**
-3. Kliknij **🔗 Kopiuj link zaproszenia** i wyślij go znajomym. Kto wejdzie z tym linkiem, jedzie w tej samej grupie i na tej samej trasie.
-4. **🔌 Trener** łączy z trenerem, a **❤️ Pulsometr** z paskiem HR.
-5. **🎙️ Dołącz do rozmowy** włącza głos. Klawisz `M` wycisza i włącza mikrofon. Najlepiej jechać w słuchawkach.
-6. Pierwsza osoba w grupie (gospodarz) może kliknąć **🏁 Start wspólny**: wszyscy wracają na start i ruszają razem po 10-sekundowym odliczaniu.
+2. **Profil.** Przy pierwszej wizycie utwórz profil: imię, waga, wzrost, avatar i strój (własne kolory albo **strój klubowy UECT**), nakrycie głowy, kolor ramy, skóra i włosy. Podgląd 3D zmienia się na żywo. Na jednym komputerze może być kilka profili. Przy kolejnej wizycie wybierasz swój, tworzysz nowy albo edytujesz (✏️). Profile zapisują się w przeglądarce.
+3. **Kto jest na trasie.** Widzisz wszystkie aktywne przejazdy i kto w nich jedzie. Do wyboru:
+   - **Dołącz do X**: pojawiasz się tuż za wybraną osobą,
+   - **Jedź od startu**,
+   - **Dołącz do eventu**, jeśli gospodarz zaplanował jazdę grupową (widać licznik do startu),
+   - **➕ Nowy przejazd**: własny kod i trasa.
+4. W grze **🔗 Zaproś** kopiuje link do przejazdu. Kto go otworzy, od razu widzi ten przejazd na górze listy.
+5. **🔌 Trener** łączy z trenerem, **❤️ Puls** z paskiem HR, **🎙️ Rozmowa** włącza głos (klawisz `M` wycisza mikrofon).
+6. **👕 Strój** pozwala zmienić wygląd w trakcie jazdy. Inni widzą zmianę od razu.
+7. **↪** przy kolarzu na liście grupy przenosi Cię do niego, a **⏮ Na start** na początek trasy.
+8. **Jazda grupowa.** Gospodarz (pierwsza osoba w przejeździe) wybiera czas, np. „za 5 min”, i klika **📅 Zaplanuj**. Każdy widzi pasek z odliczaniem i przycisk **Dołącz do eventu**. Zapisani czekają na starcie i ruszają razem po odliczaniu.
+9. **🏁 Zakończ** pokazuje podsumowanie: dystans, czas, moc, W/kg, przewyższenie i tętno. Możesz:
+   - **zapisać jazdę w historii** (menu → „Moje przejazdy”),
+   - **pobrać GPX** (Strava),
+   - **pobrać TCX** (Strava i Garmin Connect, z mocą, tętnem i kadencją).
+
+   Po wgraniu ustaw typ aktywności na „Jazda wirtualna”. Jeśli karta się zamknie w trakcie jazdy, przejazd zostanie odzyskany jako szkic przy następnym wejściu.
 
 Skróty klawiszowe: `↑`/`↓` zmieniają moc ręczną, `M` wycisza mikrofon, `Enter` otwiera czat.
+
+Gra liczy jazdę także wtedy, gdy karta jest w tle, ale najlepiej trzymać ją na pierwszym planie.
 
 ## Dodawanie tras
 
@@ -60,12 +74,16 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 
 | Plik | Co robi |
 |---|---|
-| `server.js` | Express + Socket.IO: lista tras, grupy, synchronizacja pozycji, czat, sygnalizacja WebRTC |
+| `server.js` | Express + Socket.IO: trasy, lista aktywnych przejazdów, grupy, jazdy grupowe, czat, sygnalizacja WebRTC |
 | `lib/gpx.js` | Parsowanie GPX, wygładzanie wysokości i nachylenia, przeliczanie na metry |
 | `public/js/world.js` | Świat 3D (Three.js): droga, teren generowany wokół kolarza, drzewa, kolarze, kamera |
 | `public/js/physics.js` | Fizyka: moc → prędkość (opór powietrza, toczenia, grawitacja, drafting) |
 | `public/js/trainer.js` | Web Bluetooth: FTMS (odczyt i sterowanie nachyleniem), Cycling Power, Heart Rate |
 | `public/js/voice.js` | Rozmowy głosowe WebRTC i wskaźnik mówienia |
 | `public/js/hud.js` | Profil wysokości i minimapa |
+| `public/js/profile.js` | Profile kolarzy w przeglądarce, edytor wyglądu |
+| `public/js/kits.js` | Stroje klubowe (tekstury UECT, grafiki w `public/kits/`) |
+| `public/js/recorder.js` | Zapis jazdy, historia, eksport GPX/TCX |
+| `public/js/ride.js` | Logika jazdy: teleporty, eventy, garderoba, podsumowanie |
 
 Prędkość w grze wynika z mocy z trenera i nachylenia trasy, tak jak w Zwifcie. Prędkość podawana przez sam trener jest ignorowana.

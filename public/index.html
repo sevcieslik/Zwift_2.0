@@ -9,24 +9,71 @@
   <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.min.js" } }</script>
 </head>
 <body>
-  <!-- Lobby -->
+  <!-- ================= LOBBY ================= -->
   <section id="lobby" class="screen">
-    <div class="card">
-      <h1>🚴 GPX Ride</h1>
-      <p class="sub">Jedź swoją trasą GPX razem ze znajomymi z klubu.</p>
-      <label>Imię / ksywa <input id="name" maxlength="24" placeholder="np. Marek" /></label>
-      <label>Waga (kg) <input id="weight" type="number" min="30" max="200" value="75" /></label>
-      <label id="routeWrap">Trasa <select id="route"></select></label>
-      <p id="routeInfo" class="muted"></p>
-      <label>Kod przejazdu <input id="room" maxlength="32" placeholder="np. wtorek-klub" /></label>
-      <p class="muted small">Ten sam kod = ta sama grupa. Po wejściu dostaniesz link do wysłania znajomym.</p>
-      <button id="joinBtn" class="primary">Jedziemy!</button>
-      <p id="lobbyErr" class="err"></p>
-      <p id="btWarn" class="warn hidden">Ta przeglądarka nie obsługuje Bluetooth. Do połączenia z trenerem użyj Chrome lub Edge na komputerze (albo Chrome na Androidzie).</p>
+    <div class="lobby-wrap">
+      <header class="topbar">
+        <h1>🚴 GPX Ride</h1>
+        <div id="meChip" class="me-chip hidden"></div>
+      </header>
+
+      <!-- Step 1: choose profile -->
+      <div id="pickProfile" class="card hidden">
+        <h2>Kto jedzie?</h2>
+        <div id="profileList" class="profile-list"></div>
+      </div>
+
+      <!-- Step 1b: edit profile -->
+      <div id="editProfile" class="card hidden">
+        <h2 id="editTitle">Nowy profil</h2>
+        <div class="edit-grid">
+          <div class="preview-col">
+            <canvas id="preview"></canvas>
+          </div>
+          <div>
+            <div class="grid3">
+              <label>Imię / ksywa <input id="pName" maxlength="24" placeholder="np. Kasia" /></label>
+              <label>Waga (kg) <input id="pWeight" type="number" min="30" max="200" /></label>
+              <label>Wzrost (cm) <input id="pHeight" type="number" min="120" max="220" /></label>
+            </div>
+            <div id="pLook" class="editor"></div>
+          </div>
+        </div>
+        <div class="row end">
+          <button id="pDelete" class="ghost danger">Usuń profil</button>
+          <span class="grow"></span>
+          <button id="pCancel" class="ghost">Anuluj</button>
+          <button id="pSave" class="primary">Zapisz profil</button>
+        </div>
+        <p id="pErr" class="err"></p>
+      </div>
+
+      <!-- Step 2: rides -->
+      <div id="ridesView" class="hidden">
+        <div id="draftBox" class="card warn-card hidden"></div>
+        <div class="card">
+          <div class="row between"><h2>Kto jest na trasie</h2><span id="roomsInfo" class="muted small"></span></div>
+          <div id="roomList"></div>
+          <details id="newRide">
+            <summary>➕ Nowy przejazd</summary>
+            <div class="grid2">
+              <label>Kod przejazdu <input id="nCode" maxlength="32" placeholder="np. wtorek-klub" /></label>
+              <label>Trasa <select id="nRoute"></select></label>
+            </div>
+            <button id="nCreate" class="primary">Utwórz i jedź</button>
+          </details>
+          <p id="joinErr" class="err"></p>
+          <p id="btWarn" class="warn hidden">Ta przeglądarka nie obsługuje Bluetooth. Do połączenia z trenerem użyj Chrome lub Edge na komputerze (albo Chrome na Androidzie).</p>
+        </div>
+        <div class="card">
+          <h2>Moje przejazdy</h2>
+          <div id="history"></div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- Ride -->
+  <!-- ================= RIDE ================= -->
   <section id="ride" class="screen hidden">
     <canvas id="view"></canvas>
 
@@ -41,24 +88,43 @@
       <div class="stat"><span id="sWkg">0.0</span><small>W/kg</small></div>
     </div>
 
+    <div id="eventBar" class="hidden"></div>
     <div id="banner" class="hidden"></div>
     <div id="draft" class="hidden">🌀 Jedziesz w tunelu</div>
 
     <div id="side" class="panel">
       <div class="row between"><b>Grupa</b><span id="roomCode" class="muted small"></span></div>
       <ul id="riders"></ul>
-      <button id="inviteBtn" class="small-btn">🔗 Kopiuj link zaproszenia</button>
-      <button id="startBtn" class="small-btn hidden">🏁 Start wspólny (odliczanie)</button>
+      <div class="row">
+        <button id="toStartBtn" class="small-btn">⏮ Na start</button>
+        <button id="inviteBtn" class="small-btn">🔗 Zaproś</button>
+      </div>
+      <div id="hostBox" class="host-box hidden">
+        <b class="small">Jazda grupowa (gospodarz)</b>
+        <div class="row">
+          <select id="evMinutes">
+            <option value="1">za 1 min</option><option value="2">za 2 min</option>
+            <option value="5" selected>za 5 min</option><option value="10">za 10 min</option>
+            <option value="15">za 15 min</option><option value="30">za 30 min</option><option value="60">za 60 min</option>
+          </select>
+          <button id="evCreate" class="small-btn">📅 Zaplanuj</button>
+        </div>
+        <button id="evCancel" class="small-btn hidden">✖ Odwołaj jazdę grupową</button>
+      </div>
     </div>
 
     <div id="controls" class="panel">
       <div class="row">
         <button id="trainerBtn">🔌 Trener</button>
-        <button id="hrBtn">❤️ Pulsometr</button>
+        <button id="hrBtn">❤️ Puls</button>
       </div>
       <div class="row">
-        <button id="voiceBtn">🎙️ Dołącz do rozmowy</button>
+        <button id="voiceBtn">🎙️ Rozmowa</button>
         <button id="muteBtn" class="hidden">🔇 Wycisz</button>
+      </div>
+      <div class="row">
+        <button id="wardrobeBtn">👕 Strój</button>
+        <button id="endBtn" class="end-btn">🏁 Zakończ</button>
       </div>
       <label class="slider">Trudność trenera <span id="diffVal">50%</span>
         <input id="difficulty" type="range" min="0" max="100" value="50" /></label>
@@ -74,6 +140,40 @@
 
     <canvas id="minimap" class="panel"></canvas>
     <canvas id="profile" class="panel"></canvas>
+
+    <!-- Wardrobe -->
+    <div id="wardrobe" class="modal hidden">
+      <div class="modal-card wide">
+        <h2>👕 Garderoba</h2>
+        <div class="edit-grid">
+          <div class="preview-col"><canvas id="wPreview"></canvas></div>
+          <div id="wLook" class="editor"></div>
+        </div>
+        <div class="row end">
+          <button id="wCancel" class="ghost">Anuluj</button>
+          <button id="wSave" class="primary">Zapisz i jedź</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- End of ride -->
+    <div id="endModal" class="modal hidden">
+      <div class="modal-card">
+        <h2>🏁 Podsumowanie jazdy</h2>
+        <div id="summary" class="summary"></div>
+        <div class="row wrap">
+          <button id="eSave" class="primary">💾 Zapisz w historii</button>
+          <button id="eGpx">⬇️ Pobierz GPX</button>
+          <button id="eTcx">⬇️ Pobierz TCX</button>
+        </div>
+        <p class="muted small">Strava: <i>Dodaj → Prześlij aktywność</i> (GPX lub TCX). Garmin Connect: <i>Importuj dane</i> (TCX). Po wgraniu ustaw typ aktywności na „Jazda wirtualna”, żeby nie zbierać segmentów z prawdziwych dróg.</p>
+        <p id="eMsg" class="ok small"></p>
+        <div class="row end">
+          <button id="eResume" class="ghost">↩ Jedź dalej</button>
+          <button id="eExit">🚪 Wyjdź do menu</button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <script src="/socket.io/socket.io.min.js"></script>

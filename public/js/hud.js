@@ -24,7 +24,9 @@ export class Profile {
     const stride = Math.max(1, Math.floor(n / w));
     // fill coloured by gradient
     for (let i = 0; i < n - stride; i += stride) {
-      const gr = r.grade[i];
+      const win = Math.max(stride, Math.round(150 / r.step));
+      const a = Math.max(0, i - win), b = Math.min(n - 1, i + win);
+      const gr = (r.ele[b] - r.ele[a]) / Math.max(1, r.dist[b] - r.dist[a]);
       g.fillStyle = gr > 0.08 ? '#d9433b' : gr > 0.04 ? '#f2a33a' : gr > 0.01 ? '#e7d85a' : gr < -0.02 ? '#5aa1e7' : '#9ccf6b';
       const x0 = X(r.dist[i]), x1 = X(r.dist[Math.min(n - 1, i + stride)]);
       g.fillRect(x0, Y(r.ele[i]), x1 - x0 + 0.6, h - pad - Y(r.ele[i]));

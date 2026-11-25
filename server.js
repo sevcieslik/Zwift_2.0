@@ -68,7 +68,6 @@ app.get('/api/config', (_req, res) => {
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 // ---------- Rooms ----------
-const COLORS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3'];
 const rooms = new Map();
 
 const clean = (s, n) => String(s || '').replace(/[<>]/g, '').trim().slice(0, n);
@@ -76,46 +75,96 @@ const num = (v, min, max, def = 0) => {
   const x = Number(v);
   return Number.isFinite(x) ? Math.min(max, Math.max(min, x)) : def;
 };
-
-function roomPublic(room) {
+const HEX = /^#[0-9a-f]{6}$/i;
+const AVATARS = ['🚴', '🚴‍♀️', '🦊', '🐻', '🐼', '🐯', '🦁', '🐸', '🐺', '🦅', '🐝', '🦄', '🐧', '🐙', '🐢', '⚡', '🔥', '⛰️'];
+function cleanAppearance(a = {}) {
+  const col = (v, d) => (HEX.test(v) ? v.toLowerCase() : d);
   return {
-    code: room.code,
-    routeId: room.routeId,
-    hostId: room.hostId,
-    startAt: room.startAt,
-    riders: [...room.riders.values()],
+    avatar: AVATARS.includes(a.avatar) ? a.avatar : '🚴',
+    jersey: col(a.jersey, '#e6194b'),
+    shorts: col(a.shorts, '#151515'),
+    socks: col(a.socks, '#ffffff'),
+    headwear: a.headwear === 'cap' ? 'cap' : 'helmet',
+    headColor: col(a.headColor, '#ffffff'),
+    frame: col(a.frame, '#d0d0d0'),
+    skin: col(a.skin, '#e8b896'),
+    hair: a.hair === 'ponytail' ? 'ponytail' : 'none',
+    hairColor: col(a.hairColor, '#5b3a1e'),
+    kit: a.kit === 'uect' ? 'uect' : '',
   };
 }
+const KIT_COLORS = { uect: '#c8102e' };
+const riderColor = (r) => KIT_COLORS[r.appearance.kit] || r.appearance.jersey;
+
+function eventPublic(room) {
+  const e = room.event;
+  return e ? { startAt: e.startAt, hostId: e.hostId, participants: [...e.participants] } : null;
+}
+function riderPublic(p, now) {
+  return {
+    id: p.id, name: p.name, color: riderColor(p), appearance: p.appearance, weight: p.weight, height: p.height,
+    dist: p.dist, lap: p.lap, speed: p.speed, power: p.power, cadence: p.cadence, hr: p.hr,
+    voice: p.voice, muted: p.muted, finished: p.finished, age: now - p.t,
+  };
+}
+function roomPublic(room) {
+  const now = Date.now();
+  return {
+    code: room.code, routeId: room.routeId, hostId: room.hostId, now,
+    event: eventPublic(room),
+    riders: [...room.riders.values()].map((p) => riderPublic(p, now)),
+  };
+}
+
+// Who is riding right now (lobby)
+app.get('/api/rooms', (_req, res) => {
+  const now = Date.now();
+  res.json({
+    now,
+    rooms: [...rooms.values()].map((r) => {
+      const route = getRoute(r.routeId);
+      return {
+        code: r.code, routeId: r.routeId, routeName: route ? route.name : r.routeId, total: route ? route.total : 0,
+        hostId: r.hostId, event: eventPublic(r),
+        riders: [...r.riders.values()].map((p) => ({
+          id: p.id, name: p.name, avatar: p.appearance.avatar, color: riderColor(p),
+          dist: p.dist, lap: p.lap, speed: p.speed, age: now - p.t,
+        })),
+      };
+    }),
+  });
+});
 
 io.on('connection', (socket) => {
   let room = null;
 
   socket.on('room:join', (msg, ack) => {
-    if (room) return;
-    const code = clean(msg && msg.room, 32).toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (room || !msg) return;
+    const code = clean(msg.room, 32).toLowerCase().replace(/[^a-z0-9-]/g, '');
     if (!code) return ack && ack({ error: 'Brak kodu przejazdu' });
     let r = rooms.get(code);
     if (!r) {
       const routeId = clean(msg.routeId, 80);
       if (!getRoute(routeId)) return ack && ack({ error: 'Nie ma takiej trasy' });
-      r = { code, routeId, hostId: socket.id, startAt: null, riders: new Map(), colorIdx: 0 };
+      r = { code, routeId, hostId: socket.id, event: null, riders: new Map() };
       rooms.set(code, r);
     }
     if (r.riders.size >= MAX_RIDERS) return ack && ack({ error: 'Przejazd jest pełny' });
     room = r;
     socket.join(code);
+    const p = msg.profile || {};
     const rider = {
       id: socket.id,
-      name: clean(msg.name, 24) || 'Kolarz',
-      weight: num(msg.weight, 30, 200, 75),
-      color: COLORS[r.colorIdx++ % COLORS.length],
-      dist: 0, lap: 0, speed: 0, power: 0, cadence: 0, hr: 0,
+      name: clean(p.name, 24) || 'Kolarz',
+      weight: num(p.weight, 30, 200, 75),
+      height: num(p.height, 120, 220, 178),
+      appearance: cleanAppearance(p.appearance),
+      dist: num(msg.dist, 0, 1e7), lap: num(msg.lap, 0, 1000) | 0, speed: 0, power: 0, cadence: 0, hr: 0,
       voice: false, muted: false, finished: false, t: Date.now(),
     };
     r.riders.set(socket.id, rider);
-    ack && ack({ ok: true, you: rider, room: roomPublic(r) });
-    socket.to(code).emit('room:joined', rider);
-    io.to(code).emit('chat', { system: true, text: `${rider.name} dołącza do przejazdu` });
+    ack && ack({ ok: true, you: riderPublic(rider, Date.now()), room: roomPublic(r) });
+    if (!msg.rejoin) io.to(code).emit('chat', { system: true, text: `${rider.name} dołącza do przejazdu` });
   });
 
   socket.on('rider:update', (u) => {
@@ -132,17 +181,39 @@ io.on('connection', (socket) => {
     rider.t = Date.now();
   });
 
-  socket.on('room:start', (msg) => {
+  // Change look / name during the ride
+  socket.on('rider:profile', (p) => {
+    const rider = room && room.riders.get(socket.id);
+    if (!rider || !p) return;
+    if (p.appearance) rider.appearance = cleanAppearance(p.appearance);
+    if (p.name) rider.name = clean(p.name, 24) || rider.name;
+  });
+
+  // ---- Group ride event (host schedules a common start) ----
+  socket.on('event:create', (msg) => {
     if (!room || room.hostId !== socket.id) return;
-    room.startAt = Date.now() + num(msg && msg.countdown, 3, 60, 10) * 1000;
-    io.to(room.code).emit('room:start', { startAt: room.startAt, serverNow: Date.now() });
+    const minutes = num(msg && msg.minutes, 0.5, 240, 5);
+    room.event = { startAt: Date.now() + minutes * 60000, hostId: socket.id, participants: new Set([socket.id]) };
+    const host = room.riders.get(socket.id);
+    io.to(room.code).emit('chat', { system: true, event: true, text: `${host.name} planuje jazdę grupową – start za ${minutes < 1 ? Math.round(minutes * 60) + ' s' : Math.round(minutes) + ' min'}. Kliknij „Dołącz do eventu”.` });
+  });
+  socket.on('event:join', (_m, ack) => {
+    if (!room || !room.event || Date.now() > room.event.startAt) return ack && ack({ error: 'Event już wystartował lub nie istnieje' });
+    room.event.participants.add(socket.id);
+    ack && ack({ ok: true, startAt: room.event.startAt, now: Date.now() });
+  });
+  socket.on('event:leave', () => { if (room && room.event) room.event.participants.delete(socket.id); });
+  socket.on('event:cancel', () => {
+    if (!room || !room.event || room.hostId !== socket.id) return;
+    room.event = null;
+    io.to(room.code).emit('chat', { system: true, text: 'Jazda grupowa została odwołana.' });
   });
 
   socket.on('chat', (text) => {
     if (!room) return;
     const rider = room.riders.get(socket.id);
     const t = clean(text, 300);
-    if (rider && t) io.to(room.code).emit('chat', { from: rider.name, color: rider.color, text: t });
+    if (rider && t) io.to(room.code).emit('chat', { from: rider.name, color: riderColor(rider), text: t });
   });
 
   // ---- Voice (WebRTC signalling, mesh) ----
@@ -170,32 +241,36 @@ io.on('connection', (socket) => {
     io.to(msg.to).emit('voice:signal', { from: socket.id, data: msg.data });
   });
 
-  socket.on('disconnect', () => {
+  socket.on('room:leave', () => leave(true));
+  socket.on('disconnect', () => leave(false));
+
+  function leave(explicit) {
     if (!room) return;
-    const rider = room.riders.get(socket.id);
-    room.riders.delete(socket.id);
-    io.to(room.code).emit('room:left', { id: socket.id });
-    socket.to(room.code).emit('voice:leave', { id: socket.id });
-    if (rider) io.to(room.code).emit('chat', { system: true, text: `${rider.name} opuszcza przejazd` });
-    if (room.riders.size === 0) rooms.delete(room.code);
-    else if (room.hostId === socket.id) {
-      room.hostId = room.riders.keys().next().value;
-      io.to(room.code).emit('room:host', { hostId: room.hostId });
+    const r = room;
+    room = null;
+    socket.leave(r.code);
+    const rider = r.riders.get(socket.id);
+    r.riders.delete(socket.id);
+    if (r.event) r.event.participants.delete(socket.id);
+    io.to(r.code).emit('room:left', { id: socket.id });
+    io.to(r.code).emit('voice:leave', { id: socket.id });
+    if (rider) io.to(r.code).emit('chat', { system: true, text: `${rider.name} ${explicit ? 'kończy jazdę' : 'rozłącza się'}` });
+    if (r.riders.size === 0) rooms.delete(r.code);
+    else if (r.hostId === socket.id) {
+      r.hostId = r.riders.keys().next().value;
+      if (r.event) r.event.hostId = r.hostId;
     }
-  });
+  }
 });
 
 // Broadcast room state ~4x per second.
 setInterval(() => {
   const now = Date.now();
   for (const r of rooms.values()) {
+    if (r.event && now > r.event.startAt + 60000) r.event = null;
     io.to(r.code).emit('room:state', {
-      now,
-      riders: [...r.riders.values()].map((p) => ({
-        id: p.id, name: p.name, color: p.color, weight: p.weight, dist: p.dist, lap: p.lap,
-        speed: p.speed, power: p.power, cadence: p.cadence, hr: p.hr, voice: p.voice,
-        muted: p.muted, finished: p.finished, age: now - p.t,
-      })),
+      now, hostId: r.hostId, event: eventPublic(r),
+      riders: [...r.riders.values()].map((p) => riderPublic(p, now)),
     });
   }
 }, 250);
