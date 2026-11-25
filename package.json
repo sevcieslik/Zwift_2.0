@@ -1,0 +1,18 @@
+{
+  "name": "gpx-ride",
+  "version": "1.0.0",
+  "description": "Wspólna jazda po trasach GPX w 3D – smart trener, grupa, rozmowy głosowe",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.22.3",
+    "socket.io": "^4.8.4",
+    "three": "^0.170.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

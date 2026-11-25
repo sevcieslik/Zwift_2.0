@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GPX Ride – wspólna jazda klubowa</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>" />
+  <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.min.js" } }</script>
+</head>
+<body>
+  <!-- Lobby -->
+  <section id="lobby" class="screen">
+    <div class="card">
+      <h1>🚴 GPX Ride</h1>
+      <p class="sub">Jedź swoją trasą GPX razem ze znajomymi z klubu.</p>
+      <label>Imię / ksywa <input id="name" maxlength="24" placeholder="np. Marek" /></label>
+      <label>Waga (kg) <input id="weight" type="number" min="30" max="200" value="75" /></label>
+      <label id="routeWrap">Trasa <select id="route"></select></label>
+      <p id="routeInfo" class="muted"></p>
+      <label>Kod przejazdu <input id="room" maxlength="32" placeholder="np. wtorek-klub" /></label>
+      <p class="muted small">Ten sam kod = ta sama grupa. Po wejściu dostaniesz link do wysłania znajomym.</p>
+      <button id="joinBtn" class="primary">Jedziemy!</button>
+      <p id="lobbyErr" class="err"></p>
+      <p id="btWarn" class="warn hidden">Ta przeglądarka nie obsługuje Bluetooth. Do połączenia z trenerem użyj Chrome lub Edge na komputerze (albo Chrome na Androidzie).</p>
+    </div>
+  </section>
+
+  <!-- Ride -->
+  <section id="ride" class="screen hidden">
+    <canvas id="view"></canvas>
+
+    <div id="stats" class="panel">
+      <div class="stat big"><span id="sPower">0</span><small>W</small></div>
+      <div class="stat"><span id="sSpeed">0.0</span><small>km/h</small></div>
+      <div class="stat"><span id="sCad">–</span><small>rpm</small></div>
+      <div class="stat"><span id="sHr">–</span><small>bpm</small></div>
+      <div class="stat"><span id="sDist">0.00</span><small id="sDistTotal">km</small></div>
+      <div class="stat"><span id="sGrade">0.0</span><small>%</small></div>
+      <div class="stat"><span id="sTime">0:00</span><small>czas</small></div>
+      <div class="stat"><span id="sWkg">0.0</span><small>W/kg</small></div>
+    </div>
+
+    <div id="banner" class="hidden"></div>
+    <div id="draft" class="hidden">🌀 Jedziesz w tunelu</div>
+
+    <div id="side" class="panel">
+      <div class="row between"><b>Grupa</b><span id="roomCode" class="muted small"></span></div>
+      <ul id="riders"></ul>
+      <button id="inviteBtn" class="small-btn">🔗 Kopiuj link zaproszenia</button>
+      <button id="startBtn" class="small-btn hidden">🏁 Start wspólny (odliczanie)</button>
+    </div>
+
+    <div id="controls" class="panel">
+      <div class="row">
+        <button id="trainerBtn">🔌 Trener</button>
+        <button id="hrBtn">❤️ Pulsometr</button>
+      </div>
+      <div class="row">
+        <button id="voiceBtn">🎙️ Dołącz do rozmowy</button>
+        <button id="muteBtn" class="hidden">🔇 Wycisz</button>
+      </div>
+      <label class="slider">Trudność trenera <span id="diffVal">50%</span>
+        <input id="difficulty" type="range" min="0" max="100" value="50" /></label>
+      <label class="slider" id="manualWrap">Moc ręczna (bez trenera) <span id="manVal">0 W</span>
+        <input id="manual" type="range" min="0" max="600" step="5" value="0" /></label>
+      <p id="trainerStatus" class="muted small">Trener niepodłączony – możesz jechać suwakiem lub strzałkami ↑ ↓</p>
+    </div>
+
+    <div id="chat" class="panel">
+      <div id="chatLog"></div>
+      <input id="chatIn" maxlength="300" placeholder="Napisz do grupy… (Enter)" />
+    </div>
+
+    <canvas id="minimap" class="panel"></canvas>
+    <canvas id="profile" class="panel"></canvas>
+  </section>
+
+  <script src="/socket.io/socket.io.min.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
