@@ -5,6 +5,7 @@ const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const { buildRoute } = require('./lib/gpx');
+const { tileHandler, MOCK: TILE_MOCK, setMockRoutes } = require('./lib/tiles');
 
 const PORT = process.env.PORT || 3000;
 const ROUTES_DIR = path.join(__dirname, 'routes');
@@ -65,6 +66,7 @@ app.get('/api/config', (_req, res) => {
   }
   res.json({ iceServers });
 });
+app.get('/tiles/:src/:z/:x/:y', tileHandler);
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 // ---------- Rooms ----------
@@ -275,7 +277,12 @@ setInterval(() => {
   }
 }, 250);
 
+if (TILE_MOCK) {
+  const { parseGpx } = require('./lib/gpx');
+  setMockRoutes(listRoutes().map((r) => parseGpx(fs.readFileSync(path.join(ROUTES_DIR, r.id + '.gpx'), 'utf8')).points));
+}
+
 server.listen(PORT, () => {
-  console.log(`GPX Ride działa na http://localhost:${PORT}`);
+  console.log(`GPX Ride działa na http://localhost:${PORT}${TILE_MOCK ? ' (teren: dane testowe)' : ''}`);
   console.log('Trasy:', listRoutes().map((r) => `${r.id} (${(r.total / 1000).toFixed(1)} km)`).join(', ') || 'brak');
 });

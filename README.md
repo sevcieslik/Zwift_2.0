@@ -34,6 +34,26 @@ Skróty klawiszowe: `↑`/`↓` zmieniają moc ręczną, `M` wycisza mikrofon, `
 
 Gra liczy jazdę także wtedy, gdy karta jest w tle, ale najlepiej trzymać ją na pierwszym planie.
 
+## Teren i grafika
+
+Teren 3D buduje się z prawdziwych danych dla okolicy trasy:
+
+- **Wysokość:** [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen, AWS Open Data). W Wielkiej Brytanii rozdzielczość wynosi ok. 30 m.
+- **Wygląd terenu:** zdjęcia satelitarne [Sentinel-2 cloudless](https://s2maps.eu) od EOX, na licencji CC BY-NC-SA 4.0, czyli tylko do użytku niekomercyjnego (klubowy użytek jest OK). Drzewa stoją tam, gdzie zdjęcia pokazują las.
+- **Dopasowanie do drogi:** droga zachowuje wysokość z pliku GPX, a teren jest do niej wyrównywany. Liczona jest różnica między GPX a mapą wysokości wzdłuż trasy.
+- **Plan bliski i daleki:** szczegółowy teren ok. 3 km wokół kolarza i daleki plan do ok. 20 km (góry na horyzoncie).
+
+Kafle pobiera serwer aplikacji (`/tiles/...`) i zapisuje je w pamięci podręcznej na dysku. Przeglądarki graczy nie łączą się z zewnętrznymi serwisami. Jeśli danych nie da się pobrać, gra pokazuje teren zastępczy, czyli wygenerowane pagórki.
+
+Zmienne środowiskowe (opcjonalne):
+
+| Zmienna | Znaczenie |
+|---|---|
+| `ELEV_TILES_URL` | Inne źródło kafli wysokości w formacie Terrarium (`{z}/{x}/{y}`) |
+| `SAT_TILES_URL` | Inne źródło zdjęć satelitarnych (`{z}/{x}/{y}`) |
+| `TILE_CACHE_DIR` | Katalog pamięci podręcznej kafli (domyślnie katalog tymczasowy) |
+| `TILE_MOCK=1` | Teren testowy bez internetu (do pracy lokalnej) |
+
 ## Dodawanie tras
 
 Wrzuć plik `.gpx` do folderu `routes/`, zrób commit i push. Render sam przebuduje aplikację, a trasa pojawi się na liście. Obsługiwane są ślady (`trkpt`) i trasy (`rtept`) z wysokością. Trasa, której koniec leży blisko startu, jest traktowana jak pętla i można ją jechać wiele okrążeń.
@@ -85,5 +105,8 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/kits.js` | Stroje klubowe (tekstury UECT, grafiki w `public/kits/`) |
 | `public/js/recorder.js` | Zapis jazdy, historia, eksport GPX/TCX |
 | `public/js/ride.js` | Logika jazdy: teleporty, eventy, garderoba, podsumowanie |
+| `public/js/rider.js` | Model kolarza i roweru (nogi na pedałach liczone na bieżąco) |
+| `public/js/terrain.js` | Teren z danych wysokościowych i zdjęć satelitarnych, drzewa |
+| `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |
 
 Prędkość w grze wynika z mocy z trenera i nachylenia trasy, tak jak w Zwifcie. Prędkość podawana przez sam trener jest ignorowana.

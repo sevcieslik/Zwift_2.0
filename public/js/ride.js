@@ -62,7 +62,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   };
   let others = new Map();
   let clockOffset = room.now - Date.now();
-  window.gpxRide = { voice, trainer, physics, recorder, get state() { return state; } };
+  window.gpxRide = { voice, trainer, physics, recorder, world, get state() { return state; } };
 
   // ---------- Positioning ----------
   function setAbs(abs, speed = null) {

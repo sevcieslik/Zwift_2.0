@@ -6,7 +6,7 @@
   <title>GPX Ride – wspólna jazda klubowa</title>
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>" />
-  <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.min.js" } }</script>
+  <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.min.js", "three/addons/": "/vendor/three/examples/jsm/" } }</script>
 </head>
 <body>
   <!-- ================= LOBBY ================= -->
@@ -139,6 +139,7 @@
     </div>
 
     <canvas id="minimap" class="panel"></canvas>
+    <div id="attrib">Teren: Terrain Tiles (Mapzen, AWS Open Data) · Zdjęcia: Sentinel-2 cloudless – s2maps.eu by EOX (Copernicus Sentinel data 2021)</div>
     <canvas id="profile" class="panel"></canvas>
 
     <!-- Wardrobe -->

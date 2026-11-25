@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RiderModel } from './world.js';
+import { RiderModel } from './rider.js';
 
 /** Small rotating 3D preview of a rider (lobby + in-ride wardrobe). */
 export class RiderPreview {
