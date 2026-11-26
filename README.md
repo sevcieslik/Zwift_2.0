@@ -73,6 +73,10 @@ Przycisk **🗺️ Teren** w grze przełącza między własnym terenem (lidar + 
 
 Klucz trafia do przeglądarki graczy, bo Google wymaga zapytań wprost z przeglądarki. Dlatego ograniczenie do adresów strony jest konieczne. Gra przesuwa układ współrzędnych za kolarzem (krzywizna Ziemi) i sama dopasowuje wysokość modelu Google do drogi. Jeśli kafle się nie wczytają, gra wraca do własnego terenu.
 
+### Dopasowanie trasy do dróg (OpenStreetMap)
+
+GPS z zegarka bywa przesunięty o kilka metrów względem drogi. W Google 3D wyglądało to tak, jakby jechało się poboczem albo przez murek. Przy pierwszym uruchomieniu serwer pobiera z OpenStreetMap (Overpass API) drogi wzdłuż trasy, zapisuje je w `routes/<trasa>.roads.json` i przesuwa każdy punkt trasy na oś najbliższej drogi biegnącej w tym samym kierunku. Warto dodać ten plik do repozytorium (`git add routes/*.roads.json`), żeby Render nie pobierał dróg przy każdym wdrożeniu. Wyłączenie: `OSM_SNAP=0`.
+
 ## Dodawanie tras
 
 Wrzuć plik `.gpx` do folderu `routes/`, zrób commit i push. Render sam przebuduje aplikację, a trasa pojawi się na liście. Obsługiwane są ślady (`trkpt`) i trasy (`rtept`) z wysokością. Trasa, której koniec leży blisko startu, jest traktowana jak pętla i można ją jechać wiele okrążeń.
@@ -128,6 +132,7 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/terrain.js` | Teren z danych wysokościowych i zdjęć satelitarnych, drzewa |
 | `public/js/camera.js` | Kamera: widoki, obrót myszą, zoom |
 | `public/js/warp.js` | Efekt hiper focus (post-processing, smugi, punkt skupienia) |
+| `lib/osm.js` | Dopasowanie trasy GPS do dróg z OpenStreetMap |
 | `public/js/google3d.js` | Google Photorealistic 3D Tiles (3DTilesRendererJS) w układzie gry |
 | `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |
 | `lib/lidar.js`, `lib/bng.js` | Kafle wysokości z lidaru (COG) i przeliczanie GPS → brytyjski układ współrzędnych |

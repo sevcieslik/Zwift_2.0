@@ -5,6 +5,7 @@ const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const { buildRoute } = require('./lib/gpx');
+const osm = require('./lib/osm');
 const { tileHandler, MOCK: TILE_MOCK, setMockRoutes, lidarEnabled } = require('./lib/tiles');
 
 const PORT = process.env.PORT || 3000;
@@ -30,6 +31,20 @@ function listRoutes() {
     .filter(Boolean)
     .sort((a, b) => (a.id === 'demo') - (b.id === 'demo') || a.name.localeCompare(b.name));
 }
+const snapLogged = new Set();
+const roadFetches = new Map();
+function fetchRoadsLater(id, route) {
+  if (process.env.OSM_SNAP === '0' || process.env.TILE_MOCK || roadFetches.has(id)) return;
+  console.log(`Trasa ${id}: pobieram drogi z OpenStreetMap (jednorazowo)…`);
+  const job = osm.fetchRoads(route)
+    .then((roads) => {
+      osm.saveCached(ROUTES_DIR, id, roads);
+      routeCache.delete(id); // next request rebuilds the route snapped to the roads
+      console.log(`Trasa ${id}: zapisano ${roads.length} dróg do routes/${id}.roads.json`);
+    })
+    .catch((e) => { console.warn(`Trasa ${id}: nie udało się pobrać dróg OSM (${e.message}) – trasa zostaje z GPS`); roadFetches.delete(id); });
+  roadFetches.set(id, job);
+}
 function getRoute(id) {
   if (!/^[\w.-]+$/.test(id)) return null;
   if (routeCache.has(id)) return routeCache.get(id);
@@ -38,6 +53,12 @@ function getRoute(id) {
   try {
     const route = buildRoute(fs.readFileSync(file, 'utf8'), id);
     route.id = id;
+    // put the GPS track onto the real road (OpenStreetMap), so it matches Google 3D Tiles / satellite imagery
+    const roads = osm.loadCached(ROUTES_DIR, id);
+    if (roads) {
+      const st = osm.snapRoute(route, roads);
+      if (!snapLogged.has(id)) { snapLogged.add(id); console.log(`Trasa ${id}: dopasowana do dróg OSM (${st.coverage}% punktów, średnio ${st.meanOffset} m korekty)`); }
+    } else fetchRoadsLater(id, route);
     routeCache.set(id, route);
     return route;
   } catch (e) {
