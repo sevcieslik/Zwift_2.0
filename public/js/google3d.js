@@ -57,6 +57,20 @@ export class GoogleTerrain extends EventTarget {
     });
     tiles.addEventListener('load-tile-set', () => { if (!this.loaded) { this.loaded = true; this.dispatchEvent(new Event('ready')); } });
     tiles.addEventListener('tiles-load-end', () => { if (!this.loaded) { this.loaded = true; this.dispatchEvent(new Event('ready')); } });
+    tiles.addEventListener('load-model', ({ scene: model }) => {
+      model.traverse((c) => {
+        const m = c.material;
+        if (!m) return;
+        for (const mm of Array.isArray(m) ? m : [m]) {
+          mm.toneMapped = false;
+          if (mm.isMeshStandardMaterial && mm.map) {
+            mm.emissiveMap = mm.map; mm.emissive.setRGB(1, 1, 1);
+            mm.color.setRGB(0, 0, 0); mm.metalness = 0; mm.roughness = 1; mm.envMapIntensity = 0;
+            mm.needsUpdate = true;
+          }
+        }
+      });
+    });
     this._ray = new THREE.Raycaster();
     this._down = new THREE.Vector3(0, -1, 0);
   }
@@ -74,22 +88,39 @@ export class GoogleTerrain extends EventTarget {
     this.calibrated = false;
   }
 
-  /** Measure where the Google surface is under the road near the rider and shift the tiles to match. */
+  /** Measure where the Google surface is under the road near the rider and shift the tiles to match.
+   *  Photogrammetry has trees, walls and houses next to (and over) the road, so for every road point we
+   *  cast a small fan of rays across the carriageway and keep the LOWEST hit (open tarmac), then take a
+   *  robust median over ~±250 m of road. */
   _calibrate(dist) {
     const tr = this.track, diffs = [];
-    for (let k = -4; k <= 4; k++) {
-      const s = tr.sample(Math.max(0, Math.min(tr.total, dist + k * 25)));
-      this._ray.set(new THREE.Vector3(s.x, s.y + 300, s.z), this._down);
-      this._ray.far = 700;
-      const hit = this._ray.intersectObject(this.tiles.group, true)[0];
-      if (hit) diffs.push(s.y - hit.point.y);
+    const o = new THREE.Vector3();
+    for (let k = -10; k <= 10; k++) {
+      const d = Math.max(0, Math.min(tr.total - 2, dist + k * 25));
+      const s = tr.sample(d), s2 = tr.sample(d + 2);
+      let nx = -(s2.z - s.z), nz = s2.x - s.x; const L = Math.hypot(nx, nz) || 1; nx /= L; nz /= L;
+      let low = null;
+      for (const off of [-2.5, -1, 0, 1, 2.5]) {
+        o.set(s.x + nx * off, s.y + 400, s.z + nz * off);
+        this._ray.set(o, this._down);
+        this._ray.far = 900;
+        const hit = this._ray.intersectObject(this.tiles.group, true)[0];
+        if (hit && (low === null || hit.point.y < low)) low = hit.point.y;
+      }
+      if (low !== null) diffs.push(s.y - low);
     }
-    if (diffs.length < 4) return;
+    if (diffs.length < 5) return;
     diffs.sort((a, b) => a - b);
-    const target = this.yOffset + diffs[diffs.length >> 1] - 0.25; // road ribbon sits just above the real road
-    this.yOffset = this.calibrated ? this.yOffset + (target - this.yOffset) * 0.3 : target;
+    // drop the upper/lower quarter (bridges, cuttings, canopy) and average the rest
+    const q = diffs.slice(diffs.length >> 2, diffs.length - (diffs.length >> 2));
+    const diff = q.reduce((a, b) => a + b, 0) / q.length;
+    const target = this.yOffset + diff - 0.15; // road ribbon sits just above the real road
+    const jump = !this.calibrated || Math.abs(target - this.yOffset) > 2.5;
+    this.yOffset = jump ? target : this.yOffset + (target - this.yOffset) * 0.4;
     this.calibrated = true;
     this.wrap.position.y = this.yOffset;
+    this.lastDiff = diff;
+    if (jump) console.info(`[Google 3D] wysokość: przesunięcie ${this.yOffset.toFixed(1)} m (próbek ${diffs.length})`);
   }
 
   update(x, z, dist) {
