@@ -9,6 +9,16 @@ const UP = V(0, 1, 0);
 const _m = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
 
 /** Tapered capsule along +Y from 0 to len (caps extend beyond), u=0 faces +Z. */
+/** Lathe along +Y from 0 to len with rounded ends; prof = [[t, radius], ...], t in 0..1. */
+function shapeGeo(prof, len, seg = 14) {
+  const pts = [];
+  const r0 = prof[0][1], r1 = prof[prof.length - 1][1];
+  for (let i = 0; i <= 4; i++) { const a = -Math.PI / 2 + (i / 4) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.max(1e-4, r0 * Math.cos(a)), r0 * Math.sin(a) * 0.7 * len / Math.max(len, r0 * 3))); }
+  for (let i = 1; i < prof.length - 1; i++) pts.push(new THREE.Vector2(prof[i][1], prof[i][0] * len));
+  for (let i = 0; i <= 4; i++) { const a = (i / 4) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.max(1e-4, r1 * Math.cos(a)), len + r1 * Math.sin(a) * 0.7 * len / Math.max(len, r1 * 3))); }
+  return new THREE.LatheGeometry(pts, seg);
+}
+
 /** Torso: tapered (narrow waist, broad chest), uniform v along the length so the jersey print isn't distorted. */
 function torsoGeo(len, seg = 28) {
   const pts = [];
@@ -202,85 +212,108 @@ export class RiderModel {
     const body = new THREE.Group();
     root.add(body);
     this.body = body;
-    const pelvisC = V(0, 1.06, -0.15), neck = V(0, 1.38, 0.29);
+    const pelvisC = V(0, 1.03, -0.17), neck = V(0, 1.32, 0.3);
+
+    // torso (jersey print: u = 0 chest, u = 0.5 back)
     const torso = new THREE.Mesh(torsoGeo(0.5), jersey);
-    // local -Z (u = 0.5, the back of the jersey texture) must face up/back
     const tDir = new THREE.Vector3().subVectors(neck, pelvisC).normalize();
-    const backN = new THREE.Vector3(0, tDir.z, -tDir.y); // perpendicular, pointing up-back
+    const backN = new THREE.Vector3(0, tDir.z, -tDir.y);
     place(torso, pelvisC, neck, backN.clone().negate(), 0.5);
-    torso.scale.set(1.22, pelvisC.distanceTo(neck) / 0.5 * 0.97, 0.82);
+    torso.scale.set(1.3, pelvisC.distanceTo(neck) / 0.5 * 1.0, 0.86);
     body.add(torso);
-    const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 12), pelvisM);
-    pelvis.position.copy(pelvisC).add(V(0, -0.02, -0.01)); pelvis.scale.set(1.15, 0.8, 1.05);
+    const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 14), pelvisM);
+    pelvis.position.copy(pelvisC).add(V(0, -0.025, -0.01)); pelvis.scale.set(1.22, 0.85, 1.15);
     body.add(pelvis);
 
-    // head
-    const headC = V(0, 1.5, 0.405);
-    link(body, neck, V(0, 1.45, 0.38), 0.05, 0.048, skin, 10);
-    const head = new THREE.Mesh(G.head, skin); head.position.copy(headC); head.scale.set(0.95, 1.05, 1.1); body.add(head);
+    // neck + head (looking up the road)
+    const headC = V(0, 1.43, 0.455);
+    const neckM = new THREE.Mesh(shapeGeo([[0, 0.056], [1, 0.05]], 0.1, 12), skin);
+    place(neckM, neck.clone().add(V(0, -0.02, -0.02)), headC.clone().add(V(0, -0.06, -0.04)), UP, 0.1);
+    body.add(neckM);
+    const head = new THREE.Mesh(G.head, skin); head.position.copy(headC); head.scale.set(0.9, 1.04, 1.08); body.add(head);
+    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.072, 14, 10), skin);
+    jaw.position.copy(headC).add(V(0, -0.05, 0.035)); jaw.scale.set(1, 0.8, 1); body.add(jaw);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.04, 8), skin);
+    nose.rotation.x = Math.PI / 2; nose.position.copy(headC).add(V(0, -0.012, 0.118)); body.add(nose);
+    for (const sx of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), skin);
+      ear.position.copy(headC).add(V(sx * 0.092, -0.005, -0.005)); ear.scale.set(0.45, 1, 0.75); body.add(ear);
+    }
+    const hairM = std(a.hairColor, 0.85);
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.104, 18, 10, 0, Math.PI * 2, Math.PI * 0.32, Math.PI * 0.3), hairM);
+    hair.position.copy(headC); hair.scale.set(0.92, 1.04, 1.06); hair.rotation.x = -0.9; // short hair below the helmet, at the back
+    body.add(hair);
+    this._mats.push(hairM);
     if (a.headwear === 'cap') {
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.106, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), headM);
-      cap.position.copy(headC).add(V(0, 0.012, -0.005)); cap.rotation.x = -0.35; body.add(cap);
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.008, 18, 1, false, -Math.PI / 2, Math.PI), kit ? kit.brim : headM);
-      brim.position.copy(headC).add(V(0, 0.075, 0.075)); brim.rotation.x = 0.35; brim.scale.set(1, 1, 0.7); body.add(brim);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.106, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), headM);
+      cap.position.copy(headC).add(V(0, 0.012, -0.004)); cap.scale.set(0.93, 1.0, 1.08); cap.rotation.x = 0.15; body.add(cap);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.068, 0.007, 20, 1, false, -Math.PI / 2, Math.PI), kit ? kit.brim : headM);
+      brim.position.copy(headC).add(V(0, 0.07, 0.085)); brim.rotation.x = -0.45; brim.scale.set(0.95, 1, 0.55); body.add(brim);
     } else {
-      const helmet = new THREE.Mesh(G.helmet, headM);
-      helmet.position.copy(headC).add(V(0, 0.02, -0.025)); helmet.scale.set(0.95, 0.85, 1.3); helmet.rotation.x = -0.35;
+      // road helmet: long dome sitting low on the forehead, tail over the back of the head
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.115, 26, 14, 0, Math.PI * 2, 0, Math.PI * 0.56), headM);
+      helmet.position.copy(headC).add(V(0, 0.008, -0.012)); helmet.scale.set(1.0, 0.98, 1.2); helmet.rotation.x = 0.12;
       body.add(helmet);
+      const vents = std(0x111111, 0.6);
+      this._mats.push(vents);
+      for (const vx of [-0.035, 0, 0.035]) {
+        const v = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.006, 0.14), vents);
+        v.position.copy(headC).add(V(vx, 0.118 - Math.abs(vx) * 0.7, -0.01)); v.rotation.x = 0.12; body.add(v);
+      }
       for (const sx of [-1, 1]) {
-        const strap = tube(0.004, 0.004, black, 4); place(strap, headC.clone().add(V(sx * 0.095, 0.02, 0)), headC.clone().add(V(sx * 0.07, -0.09, 0.05)), UP); strap.scale.y = 0.12; body.add(strap);
+        const strap = tube(0.0035, 0.0035, black, 4);
+        place(strap, headC.clone().add(V(sx * 0.088, 0.03, -0.005)), headC.clone().add(V(sx * 0.06, -0.085, 0.05)), UP);
+        strap.scale.y = 0.13; body.add(strap);
       }
     }
-    const glasses = new THREE.Mesh(G.glasses, lens);
-    glasses.rotation.x = Math.PI / 2; // arc lies in the XZ plane, from +X towards +Z
-    const glassesG = new THREE.Group();
-    glassesG.position.copy(headC).add(V(0, 0.012, 0));
-    glassesG.rotation.y = -Math.PI * 0.125; // centre the arc on the face (+Z)
-    glassesG.scale.set(0.98, 1, 1.12);
-    glassesG.add(glasses);
-    body.add(glassesG);
+    // wrap-around sunglasses following the face
+    const lensM = new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.08, metalness: 0.95, side: THREE.DoubleSide, emissive: 0x1b2a3a, emissiveIntensity: 0.25 });
+    this._mats.push(lensM);
+    const lensG = new THREE.Mesh(new THREE.SphereGeometry(0.106, 24, 3, Math.PI / 2 - 1.05, 2.1, Math.PI * 0.42, Math.PI * 0.1), lensM);
+    lensG.position.copy(headC).add(V(0, 0.004, 0.006)); lensG.scale.set(0.97, 1.06, 1.13);
+    body.add(lensG);
     if (a.hair === 'ponytail') {
-      const pt = new THREE.Mesh(limbGeo(0.03, 0.015, 0.16, 8), std(a.hairColor, 0.8));
-      place(pt, headC.clone().add(V(0, -0.02, -0.1)), headC.clone().add(V(0, -0.1, -0.24)), UP);
+      const pt = new THREE.Mesh(shapeGeo([[0, 0.028], [0.5, 0.03], [1, 0.012]], 0.17, 10), hairM);
+      place(pt, headC.clone().add(V(0, -0.01, -0.11)), headC.clone().add(V(0, -0.06, -0.27)), UP, 0.17);
       body.add(pt);
     }
 
-    // arms (static IK: hands on the hoods)
+    // arms: elbows bent and slightly out, hands on the hoods
     for (const sx of [-1, 1]) {
-      const sh = V(sx * 0.18, 1.355, 0.26);
-      const hand = V(sx * 0.2, 0.895, 0.58);
-      const elbow = ik(sh, hand, 0.3, 0.3, sh.clone().add(V(sx * 0.35, -0.25, -0.05)));
-      const shoulderBall = new THREE.Mesh(new THREE.SphereGeometry(0.062, 12, 10), sleeveM);
-      shoulderBall.position.copy(sh); body.add(shoulderBall);
-      const hem = sh.clone().lerp(elbow, 0.62);
-      const upper = new THREE.Mesh(limbGeo(0.058, 0.05, 0.18), sleeveM);
-      place(upper, sh, hem, V(0, 0, 1), 0.18); body.add(upper);
-      const upperSkin = new THREE.Mesh(limbGeo(0.045, 0.042, 0.12), skin);
-      place(upperSkin, hem, elbow, V(0, 0, 1), 0.12); body.add(upperSkin);
-      const fore = new THREE.Mesh(limbGeo(0.046, 0.035, 0.3), skin);
-      place(fore, elbow, hand, V(0, 1, 0), 0.3); body.add(fore);
-      const glove = new THREE.Mesh(G.hand, black); glove.position.copy(hand); glove.scale.set(0.8, 0.9, 1.3); body.add(glove);
+      const sh = V(sx * 0.165, 1.285, 0.27);
+      const hand = V(sx * 0.2, 0.9, 0.585);
+      const elbow = ik(sh, hand, 0.29, 0.29, sh.clone().add(V(sx * 0.5, -0.35, -0.15)));
+      const hem = sh.clone().lerp(elbow, 0.55);
+      const upper = new THREE.Mesh(shapeGeo([[0, 0.062], [0.6, 0.056], [1, 0.05]], 0.16, 14), sleeveM);
+      place(upper, sh.clone().add(V(-sx * 0.02, 0.01, -0.01)), hem, V(0, 0, 1), 0.16); body.add(upper);
+      const upperSkin = new THREE.Mesh(shapeGeo([[0, 0.046], [0.5, 0.044], [1, 0.038]], 0.13, 12), skin);
+      place(upperSkin, hem, elbow, V(0, 0, 1), 0.13); body.add(upperSkin);
+      const fore = new THREE.Mesh(shapeGeo([[0, 0.038], [0.3, 0.044], [1, 0.029]], 0.27, 12), skin);
+      place(fore, elbow, hand.clone().add(V(0, 0.015, -0.02)), V(0, 1, 0), 0.27); body.add(fore);
+      const glove = new THREE.Mesh(G.hand, black); glove.position.copy(hand).add(V(0, 0.01, 0.01)); glove.scale.set(0.85, 0.8, 1.35); body.add(glove);
     }
 
-    // legs (animated)
+    // legs (animated, IK to the pedals)
     this.legs = [];
-    const T = 0.445, S = 0.44;
+    const T = 0.45, S = 0.44;
     for (const sx of [-1, 1]) {
-      const hip = V(sx * 0.09, 1.04, -0.185);
-      const thigh = new THREE.Mesh(limbGeo(0.082, 0.056, T, 16), shortsM);
-      const knee = new THREE.Mesh(new THREE.SphereGeometry(0.054, 10, 8), skin);
-      const shin = new THREE.Mesh(limbGeo(0.052, 0.036, S, 14), skin);
-      const sock = new THREE.Mesh(limbGeo(0.04, 0.042, 0.14, 12), sockM);
-      const shoe = new THREE.Mesh(limbGeo(0.042, 0.037, 0.19, 12), shoeM);
-      shoe.scale.set(1.05, 1, 0.8);
-      body.add(thigh, knee, shin, sock, shoe);
-      this.legs.push({ sx, hip, thigh, knee, shin, sock, shoe, T, S });
+      const hip = V(sx * 0.088, 1.0, -0.17);
+      const thigh = new THREE.Mesh(shapeGeo([[0, 0.09], [0.35, 0.086], [0.75, 0.07], [1, 0.064]], 1, 16), shortsM);
+      const thighSkin = new THREE.Mesh(shapeGeo([[0, 0.06], [1, 0.054]], 1, 12), skin);
+      const knee = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), skin);
+      const calf = new THREE.Mesh(shapeGeo([[0, 0.05], [0.25, 0.058], [0.55, 0.046], [1, 0.033]], 1, 14), skin);
+      const sock = new THREE.Mesh(shapeGeo([[0, 0.048], [0.5, 0.042], [1, 0.037]], 1, 12), sockM);
+      const shoe = new THREE.Mesh(shapeGeo([[0, 0.042], [0.35, 0.05], [0.8, 0.044], [1, 0.026]], 1, 14), shoeM);
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.012, 0.26), black);
+      body.add(thigh, thighSkin, knee, calf, sock, shoe, sole);
+      this.legs.push({ sx, hip, thigh, thighSkin, knee, calf, sock, shoe, sole, T, S });
     }
 
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    if (label && labelSprite) { this.label = labelSprite; this.label.position.y = 2.1; this.group.add(this.label); }
+    if (label && labelSprite) { this.label = labelSprite; this.label.position.y = 2.0; this.group.add(this.label); }
     this.crank = Math.random() * Math.PI * 2;
     this._k = new THREE.Vector3(); this._ank = new THREE.Vector3(); this._tmp = new THREE.Vector3();
+    this._fd = new THREE.Vector3(); this._a = new THREE.Vector3(); this._b = new THREE.Vector3();
     this.animate(0, 0, 0);
   }
 
@@ -296,17 +329,27 @@ export class RiderModel {
     }
     for (const leg of this.legs) {
       const c = this.crank + (leg.sx > 0 ? Math.PI : 0);
-      const pedal = this._tmp.set(leg.sx * 0.1, 0.27 - Math.cos(c) * L, -Math.sin(c) * L);
-      const footAng = -0.22 + 0.2 * Math.sin(c + 0.6); // heel drop through the stroke
-      const ankle = this._ank.set(leg.sx * 0.1, pedal.y + 0.07 * Math.cos(footAng) + 0.02, pedal.z - 0.07 * Math.cos(footAng) + 0.02);
-      const knee = ik(leg.hip, ankle, leg.T, leg.S, leg.hip.clone().add(V(leg.sx * 0.03, 0.25, 1)), this._k);
-      place(leg.thigh, leg.hip, knee, V(0, 1, 0), leg.T);
+      const x = leg.sx * 0.1;
+      const pedal = this._tmp.set(x, 0.27 - Math.cos(c) * L, -Math.sin(c) * L);
+      // foot pitch: toes slightly down, heel drops on the down stroke
+      const pitch = -0.18 + 0.16 * Math.sin(c + 0.6);
+      const fd = this._fd.set(0, Math.sin(pitch), Math.cos(pitch)); // heel -> toe
+      const ankle = this._ank.copy(pedal).addScaledVector(fd, -0.12).add(V(0, 0.085, 0));
+      const knee = ik(leg.hip, ankle, leg.T, leg.S, leg.hip.clone().add(V(leg.sx * 0.04, 0.3, 1)), this._k);
+      const shortsEnd = this._a.copy(leg.hip).lerp(knee, 0.8);
+      place(leg.thigh, leg.hip, shortsEnd, V(0, 1, 0), 1);
+      place(leg.thighSkin, shortsEnd, knee, V(0, 1, 0), 1);
       leg.knee.position.copy(knee);
-      place(leg.shin, knee, ankle, V(0, 0, 1), leg.S);
-      place(leg.sock, ankle.clone().lerp(knee, 0.33), ankle, V(0, 0, 1), ankle.distanceTo(ankle.clone().lerp(knee, 0.33)));
-      const heel = V(leg.sx * 0.1, ankle.y - 0.045, ankle.z - 0.045);
-      const toe = V(leg.sx * 0.1, pedal.y + Math.sin(footAng) * 0.12 + 0.01, pedal.z + Math.cos(footAng) * 0.11);
-      place(leg.shoe, heel, toe, V(0, 1, 0), 0.19);
+      place(leg.calf, knee, ankle, V(0, 0, 1), 1);
+      const sockTop = this._b.copy(knee).lerp(ankle, 0.5);
+      place(leg.sock, sockTop, ankle, V(0, 0, 1), 1);
+      // road shoe: cleat (pedal) under the ball of the foot
+      const heel = pedal.clone().addScaledVector(fd, -0.17).add(V(0, 0.035, 0));
+      const toe = pedal.clone().addScaledVector(fd, 0.1).add(V(0, 0.022, 0));
+      place(leg.shoe, heel, toe, V(0, 1, 0), 1);
+      leg.shoe.scale.set(0.88, heel.distanceTo(toe), 0.72);
+      leg.sole.position.copy(heel).lerp(toe, 0.5).add(V(0, -0.028, 0));
+      leg.sole.rotation.set(-pitch, 0, 0);
     }
     // subtle upper-body rock with the pedal stroke
     this.body.rotation.z = rpm > 0 ? Math.sin(this.crank) * 0.012 : 0;

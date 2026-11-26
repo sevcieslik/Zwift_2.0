@@ -46,7 +46,7 @@ function getRoute(id) {
   }
 }
 
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 })); // always revalidate: new versions show up after a refresh
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules/three'), { maxAge: '7d' }));
 
 app.get('/api/routes', (_req, res) => res.json(listRoutes()));

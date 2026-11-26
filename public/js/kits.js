@@ -89,9 +89,9 @@ function textures() {
   const thigh = canvas(512, 256, (g, w, h) => {
     g.fillStyle = '#0a0a0a'; g.fillRect(0, 0, w, h);
     g.fillStyle = '#1c1c1c'; g.fillRect(0, 0, w, h * 0.08); // leg gripper
-    verticalText(g, 'UECT', w * 0.25, h * 0.45, 64, '#fff');
-    verticalText(g, 'UECT', w * 0.75, h * 0.45, 64, '#fff');
-    if (images.eagle) { g.drawImage(images.eagle, w * 0.25 - 22, h * 0.78, 44, 42); g.drawImage(images.eagle, w * 0.75 - 22, h * 0.78, 44, 42); }
+    verticalText(g, 'UECT', w * 0.25, h * 0.5, 38, '#fff');
+    verticalText(g, 'UECT', w * 0.75, h * 0.5, 38, '#fff');
+    
   });
   const sock = canvas(256, 256, (g, w, h) => {
     g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
