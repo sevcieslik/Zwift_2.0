@@ -200,6 +200,11 @@ export async function startRide({ code, routeId, profile, start, onError }) {
       world.rig.next();
     } else if (e.key === 'm' || e.key === 'M') {
       if (voice.active) voice.setMuted(!voice.muted);
+    } else if ((e.key === 'PageUp' || e.key === 'PageDown') && world.google && world.terrainMode === 'google') {
+      const m = world.google.nudge(e.key === 'PageUp' ? 1 : -1);
+      const g = world.google;
+      addChat({ system: true, text: `Google 3D: ręczna korekta ${m > 0 ? '+' : ''}${m} m (auto ${g.yOffset.toFixed(1)} m, ostatni pomiar ${g.lastDiff != null ? g.lastDiff.toFixed(1) : '–'} m)` });
+      e.preventDefault();
     } else if (e.key === 'Enter') {
       $('chatIn').focus(); e.preventDefault();
     }

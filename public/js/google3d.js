@@ -10,7 +10,8 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 const R = 6371008.8;
 const toRad = (d) => (d * Math.PI) / 180;
-const GEOID_UK = 52; // ellipsoid - mean sea level in North Wales (m); refined by calibration
+const GEOID_UK = 52;
+const MAX_OFF = 20; // max automatic height correction (m) // ellipsoid - mean sea level in North Wales (m); refined by calibration
 
 export class GoogleTerrain extends EventTarget {
   constructor({ key, scene, camera, renderer, track }) {
@@ -44,6 +45,7 @@ export class GoogleTerrain extends EventTarget {
 
     this.center = { x: 0, z: 0 };
     this.yOffset = 0;
+    this.manual = 0; // user nudge (PageUp/PageDown)
     this.calibrated = false;
     this.lastCal = 0;
     this.errors = 0;
@@ -84,7 +86,7 @@ export class GoogleTerrain extends EventTarget {
     const lat = this.lat0 - z / this.ky, lon = this.lon0 + x / this.kx;
     this.reorient.transformLatLonHeightToOrigin(toRad(lat), toRad(lon), this.track.baseEle + GEOID_UK);
     this.center = { x, z };
-    this.wrap.position.set(x, this.yOffset, z);
+    this.wrap.position.set(x, this.yOffset + this.manual, z);
     this.calibrated = false;
   }
 
@@ -114,11 +116,16 @@ export class GoogleTerrain extends EventTarget {
     // drop the upper/lower quarter (bridges, cuttings, canopy) and average the rest
     const q = diffs.slice(diffs.length >> 2, diffs.length - (diffs.length >> 2));
     const diff = q.reduce((a, b) => a + b, 0) / q.length;
-    const target = this.yOffset + diff - 0.15; // road ribbon sits just above the real road
+    let target = this.yOffset + diff - 0.15; // road ribbon sits just above the real road
+    // The georeference (WGS84 ellipsoid + UK geoid) is good to a few metres; a big correction means we
+    // measured coarse, half-loaded tiles or canopy, so never let it run away.
+    const spread = q[q.length - 1] - q[0];
+    if (spread > 12) { console.info(`[Google 3D] pomiar odrzucony (rozrzut ${spread.toFixed(1)} m)`); return; }
+    target = Math.max(-MAX_OFF, Math.min(MAX_OFF, target));
     const jump = !this.calibrated || Math.abs(target - this.yOffset) > 2.5;
     this.yOffset = jump ? target : this.yOffset + (target - this.yOffset) * 0.4;
     this.calibrated = true;
-    this.wrap.position.y = this.yOffset;
+    this.wrap.position.y = this.yOffset + this.manual;
     this.lastDiff = diff;
     if (jump) console.info(`[Google 3D] wysokość: przesunięcie ${this.yOffset.toFixed(1)} m (próbek ${diffs.length})`);
   }
@@ -132,10 +139,19 @@ export class GoogleTerrain extends EventTarget {
     this.camera.updateMatrixWorld();
     this.tiles.update();
     const now = performance.now();
-    if (now - this.lastCal > (this.calibrated ? 3000 : 800)) {
+    const st = this.tiles.stats || {};
+    const busy = (st.downloading || 0) + (st.parsing || 0) > 0;
+    // measure on settled (full-detail) tiles; fall back to every 6 s while streaming
+    if (now - this.lastCal > (busy ? 6000 : this.calibrated ? 3000 : 800)) {
       this.lastCal = now;
       this._calibrate(dist);
     }
+  }
+
+  nudge(dy) {
+    this.manual += dy;
+    this.wrap.position.y = this.yOffset + this.manual;
+    return this.manual;
   }
 
   attributions() {
