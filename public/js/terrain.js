@@ -74,6 +74,9 @@ export class Terrain {
   constructor(scene, track, nearestFn, opts = {}) {
     this.cand = [];
     this.lidar = !!opts.lidar;
+    this.onRoad = opts.onRoad || (() => {});
+    this.visLidar = new Uint8Array(track.n); // 1 = road height already taken from LiDAR
+    this.visShifted = false;
     this.nearSrc = this.lidar ? 'lidar' : 'elev';
     this.nearZ = this.lidar ? 15 : NEAR.elevZ;
     this.nearSeg = this.lidar ? 340 : NEAR.seg;
@@ -132,6 +135,51 @@ export class Terrain {
     last = NaN;
     for (let i = n - 1; i >= 0; i--) fill(i);
   }
+  /**
+   * Put the visual road on the LiDAR surface: both passes over the same place (start = finish,
+   * out-and-back) get the same height, and the terrain fits the road everywhere.
+   */
+  _roadFromDem(sampler, cx, cz) {
+    const r = this.track.r, n = this.track.n, vis = this.track.vis, h = NEAR.size / 2 - 120;
+    const raw = new Float32Array(n).fill(NaN);
+    let i0 = n, i1 = -1;
+    for (let i = 0; i < n; i++) {
+      const x = r.x[i], z = -r.y[i];
+      if (Math.abs(x - cx) > h || Math.abs(z - cz) > h) continue;
+      const v = sampler(x, z);
+      if (Number.isFinite(v)) { raw[i] = v; if (i < i0) i0 = i; if (i > i1) i1 = i; }
+    }
+    if (i1 < 0) return;
+    // median (±3 pts) then gaussian (±~25 m): hedges, walls and pixel noise don't make the road bumpy
+    const med = new Float32Array(n).fill(NaN);
+    for (let i = i0; i <= i1; i++) {
+      if (!Number.isFinite(raw[i])) continue;
+      const w = [];
+      for (let k = i - 3; k <= i + 3; k++) if (k >= 0 && k < n && Number.isFinite(raw[k])) w.push(raw[k]);
+      w.sort((a, b) => a - b);
+      med[i] = w[w.length >> 1];
+    }
+    const sig = Math.max(1, 12 / this.track.step);
+    // first LiDAR patch: shift the whole road by the measured GPX->LiDAR offset so it stays continuous
+    if (!this.visShifted) {
+      for (let i = 0; i < n; i++) vis[i] = r.ele[i] - this.base + this._off(i);
+      this.visShifted = true;
+      i0 = 0; i1 = n - 1;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!Number.isFinite(med[i])) continue;
+      let s = 0, ws = 0;
+      for (let k = Math.round(i - sig * 2); k <= i + sig * 2; k++) {
+        if (k < 0 || k >= n || !Number.isFinite(med[k])) continue;
+        const wk = Math.exp(-((k - i) ** 2) / (2 * sig * sig));
+        s += med[k] * wk; ws += wk;
+      }
+      vis[i] = s / ws;
+      this.visLidar[i] = 1;
+    }
+    this.onRoad(i0, i1);
+  }
+
   _off(idx) { const o = this.offset[idx]; return Number.isFinite(o) ? o : 0; }
 
   // ---------- coordinates ----------
@@ -236,12 +284,12 @@ export class Terrain {
       const r = this.track.r;
       for (const i of this.cand) { const dd = (r.x[i] - x) ** 2 + (-r.y[i] - z) ** 2; if (dd < best) { best = dd; idx = i; } }
       if (idx < 0) [d, e, idx] = this.nearest(x, z);
-      else if (Number.isFinite(dem)) return dem - this._off(idx);
-      else return this.sampler ? r.ele[idx] - this.base : this._blend2(x, z, 1e9, r.ele[idx] - this.base);
+      else if (Number.isFinite(dem)) return this.lidar ? dem : dem - this._off(idx);
+      else return this.sampler ? this.track.vis[idx] : this._blend2(x, z, 1e9, this.track.vis[idx]);
     }
     if (!Number.isFinite(dem)) return this.sampler ? e - 0.4 : this._blend2(x, z, d, e);
     const road = e - 0.4;
-    dem -= this._off(idx);
+    if (!this.lidar) dem -= this._off(idx); // with LiDAR the road itself follows the terrain
     // flat shoulder wider than half the road + one grid cell, so steep slopes never cover the road edge
     return road + (dem - road) * smooth(17, 75, d);
   }
@@ -368,6 +416,7 @@ export class Terrain {
     const sampler = this.online ? await this._elevSampler(cx, cz, NEAR.size, this.nearZ, this.nearSrc) : null;
     this.nearSampler = sampler;
     if (sampler) this._updateOffsets(sampler, cx, cz, NEAR.size);
+    if (sampler && this.lidar) this._roadFromDem(sampler, cx, cz);
     const sat = this.online && sampler ? await this._satCanvas(cx, cz, NEAR.size, NEAR.satZ) : null;
     this._setCandidates(cx, cz, NEAR.size);
     const heightFn = (x, z) => this._blend(x, z, sampler ? sampler(x, z) : NaN);
@@ -407,7 +456,7 @@ export class Terrain {
         if (Math.abs(x - cx) < 6000 && Math.abs(z - cz) < 6000 && Number.isFinite(this.offset[i])) vals.push(this.offset[i]);
       }
       vals.sort((a, b) => a - b);
-      this.farOffset = vals.length ? vals[vals.length >> 1] : 0;
+      this.farOffset = this.lidar ? 0 : (vals.length ? vals[vals.length >> 1] : 0);
     }
     const sat = await this._satCanvas(cx, cz, FAR.size, FAR.satZ);
     const geo = await this._grid(cx, cz, FAR.size, FAR.seg, (x, z) => {

@@ -14,6 +14,8 @@ export class Track {
     this.step = route.step;
     this.loop = route.loop;
     this.baseEle = route.minEle - 5;
+    // Visual road height (world Y). Starts from GPX elevation; replaced by LiDAR heights when available.
+    this.vis = Float32Array.from(route.ele, (e) => e - this.baseEle);
   }
   _idx(d) {
     d = Math.max(0, Math.min(this.total, d));
@@ -29,7 +31,7 @@ export class Track {
     const [i, t] = this._idx(d);
     const r = this.r;
     const lerp = (a) => a[i] + t * (a[i + 1] - a[i]);
-    const x = lerp(r.x), z = -lerp(r.y), y = lerp(r.ele) - this.baseEle;
+    const x = lerp(r.x), z = -lerp(r.y), y = lerp(this.vis);
     // heading from a window around the point (smoother than a single segment)
     const a = Math.max(0, i - 2), b = Math.min(this.n - 1, i + 3);
     let dx = r.x[b] - r.x[a], dz = -(r.y[b] - r.y[a]);
@@ -110,7 +112,7 @@ export class World {
 
     this._buildIndex();
     this._buildRoad();
-    this.terrain = new Terrain(this.scene, this.track, (x, z, lim) => this.nearest(x, z, lim), { lidar: opts.lidar });
+    this.terrain = new Terrain(this.scene, this.track, (x, z, lim) => this.nearest(x, z, lim), { lidar: opts.lidar, onRoad: (a, b) => this.updateRoad(a, b) });
     this.riders = new Map();
     this.camPos = null;
     this.scene.add(this.camera); // camera children (warp streaks) must be in the scene
@@ -191,10 +193,25 @@ export class World {
         if (d < best) { best = d; bi = k; }
       }
     }
-    return [Math.sqrt(best), r.ele[bi] - this.track.baseEle, bi];
+    return [Math.sqrt(best), this.track.vis[bi], bi];
   }
 
   terrainHeight(x, z) { return this.terrain.heightAt(x, z); }
+
+  // later parts of the route sit a hair higher, so overlapping passes (start = finish) don't z-fight
+  _roadY(i) { return this.track.vis[i] + 0.05 + 0.03 * (i / this.track.n); }
+
+  /** Refresh road vertex heights after the visual elevation changed. */
+  updateRoad(i0, i1) {
+    const p = this.roadGeo.attributes.position;
+    for (let i = Math.max(0, i0); i <= Math.min(this.track.n - 1, i1); i++) {
+      const y = this._roadY(i);
+      p.setY(i * 2, y); p.setY(i * 2 + 1, y);
+    }
+    p.needsUpdate = true;
+    this.roadGeo.computeVertexNormals();
+    this.roadGeo.computeBoundingSphere();
+  }
 
   _buildRoad() {
     const r = this.track.r, n = r.x.length, W = 3.6;
@@ -204,7 +221,7 @@ export class World {
       let tx = r.x[b] - r.x[a], tz = -(r.y[b] - r.y[a]);
       const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
       const nx = -tz, nz = tx;
-      const x = r.x[i], z = -r.y[i], y = r.ele[i] - this.track.baseEle + 0.05;
+      const x = r.x[i], z = -r.y[i], y = this._roadY(i);
       pos.set([x + nx * W, y, z + nz * W, x - nx * W, y, z - nz * W], i * 6);
       const v = r.dist[i] / 12;
       uv.set([0, v, 1, v], i * 4);
@@ -219,6 +236,7 @@ export class World {
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
+    this.roadGeo = geo;
     const mat = new THREE.MeshStandardMaterial({
       map: roadTexture(), roughness: 0.9, side: THREE.DoubleSide,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
