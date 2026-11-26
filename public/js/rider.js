@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { kitMaterials } from './kits.js';
+import { bodyReady, Person, personMaterials, DEFAULT_BODY } from './person.js';
 
 // Detailed low-poly cyclist on a road bike. Units: metres. Forward = +Z, up = +Y, +X = rider's left.
 // Legs are driven by 2-bone IK so the feet stay on the pedals.
@@ -209,6 +210,9 @@ export class RiderModel {
     }
 
     // ---------- rider ----------
+    const base = bodyReady(a.body || DEFAULT_BODY);
+    if (base) this._buildPerson(base, a, kit, headM, lens, black);
+    if (!base) { // fallback: primitive-shape rider (character models not loaded)
     const body = new THREE.Group();
     root.add(body);
     this.body = body;
@@ -309,6 +313,7 @@ export class RiderModel {
       this.legs.push({ sx, hip, thigh, thighSkin, knee, calf, sock, shoe, sole, T, S });
     }
 
+    } // end fallback rider
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     if (label && labelSprite) { this.label = labelSprite; this.label.position.y = 2.0; this.group.add(this.label); }
     this.crank = Math.random() * Math.PI * 2;
@@ -327,6 +332,7 @@ export class RiderModel {
       crank.rotation.x = c; // arm points down (-Y) when c = 0, rotates forward
       pedal.position.set(sx * 0.115, 0.27 - Math.cos(c) * L, -Math.sin(c) * L);
     }
+    if (this.person) { this._posePerson(rpm); return; }
     for (const leg of this.legs) {
       const c = this.crank + (leg.sx > 0 ? Math.PI : 0);
       const x = leg.sx * 0.1;
@@ -355,9 +361,110 @@ export class RiderModel {
     this.body.rotation.z = rpm > 0 ? Math.sin(this.crank) * 0.012 : 0;
   }
 
+  _buildPerson(base, a, kit, headM, lensM, black) {
+    const { mats, own } = personMaterials(base, a, kit, std);
+    this._mats.push(...own);
+    const P = new Person(base, mats);
+    this.person = P;
+    const m = base.m;
+    // head gear in model units, attached to the head bone (computed in the bind pose)
+    P.root.updateMatrixWorld(true);
+    const hb = P.B.Head, box = m.headBox;
+    const size = new THREE.Vector3(); box.getSize(size);
+    const c = new THREE.Vector3(); box.getCenter(c);
+    const r = Math.max(size.x, size.z) * 0.56;
+    const gear = new THREE.Group();
+    gear.position.copy(hb.worldToLocal(new THREE.Vector3(c.x, box.max.y - r * 0.62, c.z)));
+    gear.quaternion.copy(hb.getWorldQuaternion(new THREE.Quaternion()).invert());
+    hb.add(gear);
+    if (a.headwear === 'cap') {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 0.98, 22, 10, 0, Math.PI * 2, 0, Math.PI * 0.45), headM);
+      cap.scale.set(1, 0.9, 1.05); gear.add(cap);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.62, r * 0.62, r * 0.06, 20, 1, false, -Math.PI / 2, Math.PI), kit ? kit.brim : headM);
+      brim.position.set(0, r * 0.38, r * 0.78); brim.rotation.x = -0.4; brim.scale.set(1, 1, 0.6); gear.add(brim);
+    } else {
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(r * 1.06, 26, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), headM);
+      helmet.scale.set(1, 0.92, 1.22); helmet.rotation.x = 0.1; gear.add(helmet);
+      const vents = std(0x111111, 0.6); this._mats.push(vents);
+      for (const vx of [-0.3, 0, 0.3]) {
+        const v = new THREE.Mesh(new THREE.BoxGeometry(r * 0.1, r * 0.05, r * 1.3), vents);
+        v.position.set(vx * r, r * 1.0 - Math.abs(vx) * r * 0.5, -r * 0.05); gear.add(v);
+      }
+    }
+    // wrap-around glasses at eye level
+    const eyeY = box.min.y + size.y * 0.5;
+    const lensG = new THREE.Mesh(new THREE.SphereGeometry(size.z * 0.5 + r * 0.05, 24, 3, Math.PI / 2 - 1.0, 2.0, Math.PI * 0.43, Math.PI * 0.12), lensM);
+    lensM.side = THREE.DoubleSide;
+    lensG.position.copy(hb.worldToLocal(new THREE.Vector3(c.x, eyeY, c.z)));
+    lensG.quaternion.copy(gear.quaternion);
+    lensG.scale.set(size.x / size.z, 1, 1);
+    hb.add(lensG);
+    hb.scale.setScalar(0.66); // the pack's heads, hands and feet are cartoon-sized
+    for (const s of ['L', 'R']) { P.B['Hand' + s].scale.setScalar(0.72); P.B['Foot' + s].scale.setScalar(0.8); }
+    this.footScale = 0.8;
+    this.pk = 0.9; // metres per model unit
+    P.root.scale.setScalar(this.pk);
+    this.root.add(P.root);
+    this.pelvisC = V(0, 1.03, -0.17);
+    this._lean = V(0, 0.5, 0.86).normalize();
+    this._lean2 = V(0, 0.62, 0.78).normalize();
+    this._headQ = new THREE.Quaternion();
+    this._v = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
+  }
+
+  _posePerson(rpm) {
+    const P = this.person, m = P.m, k = this.pk, root = this.root;
+    const [v0, v1, v2, v3, v4, v5] = this._v;
+    const W = (v) => root.localToWorld(v);
+    const Lc = (name, out) => root.worldToLocal(P.bonePos(name, out));
+    P.reset();
+    P.root.position.copy(this.pelvisC).addScaledVector(m.stomach, -k);
+    P.root.rotation.z = rpm > 0 ? Math.sin(this.crank) * 0.015 : 0;
+    P.root.updateMatrixWorld(true);
+    // spine: lean over the bars
+    Lc('Stomach', v0);
+    P.aim('Stomach', W(v1.copy(v0).addScaledVector(this._lean, m.chest.distanceTo(m.stomach) * k)));
+    P.B.Chest.updateWorldMatrix(true, false);
+    Lc('Chest', v0);
+    P.aim('Chest', W(v1.copy(v0).addScaledVector(this._lean2, m.headBone.distanceTo(m.chest) * k)));
+    // head looks up the road
+    root.getWorldQuaternion(this._headQ);
+    this._headQ.multiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), -0.25));
+    P.setWorldQuat('Head', this._headQ);
+    // arms: hands on the hoods
+    const U = m.upper * k, F = m.fore * k;
+    for (const s of ['L', 'R']) {
+      const sx = s === 'L' ? 1 : -1;
+      P.B['UpperArm' + s].updateWorldMatrix(true, false);
+      const sh = Lc('UpperArm' + s, v0);
+      const hand = v1.set(sx * 0.2, 0.9, 0.585);
+      const elbow = ik(sh, hand, U, F, v2.copy(sh).add(V(sx * 0.5, -0.35, -0.15)), v3);
+      P.aim('UpperArm' + s, W(v4.copy(elbow)));
+      P.aim('LowerArm' + s, W(v4.copy(hand)));
+      P.aim('Hand' + s, W(v4.copy(hand).add(V(0, -0.03, 0.09))));
+    }
+    // legs: IK to the pedals
+    const T = m.thigh * k, S = m.shin * k, L = 0.172;
+    const ankleUp = m.ankleToSole * k * this.footScale, ball = m.toeZ * k * 0.5 * this.footScale;
+    for (const s of ['L', 'R']) {
+      const sx = s === 'L' ? 1 : -1;
+      const c = this.crank + (sx > 0 ? Math.PI : 0);
+      const pedal = v0.set(sx * 0.1, 0.27 - Math.cos(c) * L, -Math.sin(c) * L);
+      const pitch = -0.18 + 0.16 * Math.sin(c + 0.6);
+      const fd = v1.set(0, Math.sin(pitch), Math.cos(pitch));
+      const ankle = v2.copy(pedal).addScaledVector(fd, -ball).add(V(0, ankleUp, 0));
+      P.B['UpperLeg' + s].updateWorldMatrix(true, false);
+      const hip = Lc('UpperLeg' + s, v3);
+      const knee = ik(hip, ankle, T, S, v4.copy(hip).add(V(sx * 0.05, 0.3, 1)), v5);
+      P.aim('UpperLeg' + s, W(knee.clone()));
+      P.aim('LowerLeg' + s, W(ankle.clone()));
+      P.aim('Foot' + s, W(v4.copy(pedal).addScaledVector(fd, ball * 1.1).add(V(0, 0.02, 0))));
+    }
+  }
+
   dispose() {
     this.group.traverse((o) => {
-      if (o.geometry && !Object.values(G).includes(o.geometry)) o.geometry.dispose();
+      if (o.geometry && !o.isSkinnedMesh && !Object.values(G).includes(o.geometry)) o.geometry.dispose(); // skinned geometry is shared
     });
     for (const m of this._mats) m.dispose();
     if (this.label) { this.label.material.map.dispose(); this.label.material.dispose(); }

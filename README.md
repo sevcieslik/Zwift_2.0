@@ -40,6 +40,15 @@ Skróty klawiszowe: `↑`/`↓` zmieniają moc ręczną, `M` wycisza mikrofon, `
 
 Gra liczy jazdę także wtedy, gdy karta jest w tle, ale najlepiej trzymać ją na pierwszym planie.
 
+## Postacie
+
+Kolarze to postacie z pakietu **[Low Poly People](https://davidjalbert.itch.io/low-poly-people)** autorstwa David Jalbert, na licencji [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Pliki są w `public/models/people/`. Przy wczytywaniu gra je przerabia:
+- wydłuża nogi i ręce oraz zmniejsza głowę, dłonie i stopy (pakiet ma kreskówkowe proporcje),
+- zamienia ubrania na strój kolarski (koszulka z nadrukiem, spodenki, skarpetki, buty, rękawiczki),
+- przekolorowuje skórę i włosy według profilu i dodaje kask albo czapeczkę oraz okulary.
+
+Kości są ustawiane w każdej klatce: tułów pochylony nad kierownicą, ręce na klamkach, nogi na pedałach. W profilu można wybrać jedną z 18 sylwetek albo „Klasyczny” (prosty, gładki model bez twarzy).
+
 ## Teren i grafika
 
 Teren 3D buduje się z prawdziwych danych dla okolicy trasy:
@@ -113,7 +122,8 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/kits.js` | Stroje klubowe (tekstury UECT, grafiki w `public/kits/`) |
 | `public/js/recorder.js` | Zapis jazdy, historia, eksport GPX/TCX |
 | `public/js/ride.js` | Logika jazdy: teleporty, eventy, garderoba, podsumowanie |
-| `public/js/rider.js` | Model kolarza i roweru (nogi na pedałach liczone na bieżąco) |
+| `public/js/rider.js` | Rower i kolarz (nogi na pedałach liczone na bieżąco) |
+| `public/js/person.js` | Postacie Low Poly People: przeróbka modelu, strój, pozowanie kości |
 | `public/js/terrain.js` | Teren z danych wysokościowych i zdjęć satelitarnych, drzewa |
 | `public/js/camera.js` | Kamera: widoki, obrót myszą, zoom |
 | `public/js/warp.js` | Efekt hiper focus (post-processing, smugi, punkt skupienia) |

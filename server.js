@@ -93,6 +93,7 @@ function cleanAppearance(a = {}) {
     hair: a.hair === 'ponytail' ? 'ponytail' : 'none',
     hairColor: col(a.hairColor, '#5b3a1e'),
     kit: a.kit === 'uect' ? 'uect' : '',
+    body: /^((normal|strong|fat)-(man|woman)-[abc]|classic)$/.test(a.body) ? a.body : 'normal-man-a',
   };
 }
 const KIT_COLORS = { uect: '#c8102e' };

@@ -1,3 +1,4 @@
+import { BODIES } from './person.js';
 // Rider profiles stored in the browser (several per device: e.g. you and your partner).
 
 export const AVATARS = ['🚴', '🚴‍♀️', '🦊', '🐻', '🐼', '🐯', '🦁', '🐸', '🐺', '🦅', '🐝', '🦄', '🐧', '🐙', '🐢', '⚡', '🔥', '⛰️'];
@@ -25,6 +26,7 @@ export function defaultAppearance() {
     hair: 'none', // none | ponytail
     hairColor: '#5b3a1e',
     kit: '', // '' = own colours, 'uect' = club kit
+    body: 'normal-man-a', // character model (Low Poly People)
   };
 }
 
@@ -71,6 +73,7 @@ export function appearanceEditor(root, appearance, onChange) {
       <button type="button" data-v="" class="${!a.kit ? 'sel' : ''}">Własne kolory</button>
       <button type="button" data-v="uect" class="${a.kit === 'uect' ? 'sel' : ''}">🦅 Klubowy UECT</button></div></div>
     <p class="muted small kit-note">Strój klubowy zastępuje kolory koszulki, spodenek, skarpetek i nakrycia głowy.</p>
+    <div class="ed-row"><span>Sylwetka</span><select data-key="body">${BODIES.map(([v, l]) => `<option value="${v}"${a.body === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="ed-row"><span>Avatar</span><div class="avatars">${AVATARS.map((x) =>
       `<button type="button" class="av${a.avatar === x ? ' sel' : ''}" data-av="${x}">${x}</button>`).join('')}</div></div>
     <div class="ed-row"><span>Koszulka</span>${sw('jersey', JERSEYS)}</div>
@@ -82,10 +85,7 @@ export function appearanceEditor(root, appearance, onChange) {
       ${sw('headColor', ['#ffffff', '#111111', '#e6194b', '#ffd400', '#00a6d6', '#3cb44b'])}</div>
     <div class="ed-row"><span>Rama roweru</span>${sw('frame', ['#d0d0d0', '#111111', '#e6194b', '#ff6a00', '#00a6d6', '#3cb44b', '#ffd400'])}</div>
     <div class="ed-row"><span>Skóra</span>${sw('skin', SKINS)}</div>
-    <div class="ed-row"><span>Włosy</span><div class="seg" data-key="hair">
-      <button type="button" data-v="none" class="${a.hair === 'none' ? 'sel' : ''}">Krótkie</button>
-      <button type="button" data-v="ponytail" class="${a.hair === 'ponytail' ? 'sel' : ''}">Kucyk</button></div>
-      ${sw('hairColor', ['#2a1a10', '#5b3a1e', '#a8743a', '#e3c27a', '#9a9a9a'])}</div>`;
+    <div class="ed-row"><span>Włosy</span>${sw('hairColor', ['#2a1a10', '#5b3a1e', '#a8743a', '#e3c27a', '#9a9a9a'])}</div>`;
 
   const emit = () => onChange({ ...a });
   root.classList.toggle('has-kit', !!a.kit);
@@ -101,6 +101,11 @@ export function appearanceEditor(root, appearance, onChange) {
     const picker = box.querySelector('input[type=color]');
     if (picker) picker.value = b.dataset.v;
     root.classList.toggle('has-kit', !!a.kit);
+    emit();
+  };
+  root.onchange = (e) => {
+    if (e.target.tagName !== 'SELECT') return;
+    a[e.target.dataset.key] = e.target.value;
     emit();
   };
   root.oninput = (e) => {

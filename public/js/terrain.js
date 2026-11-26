@@ -140,7 +140,7 @@ export class Terrain {
    * out-and-back) get the same height, and the terrain fits the road everywhere.
    */
   _roadFromDem(sampler, cx, cz) {
-    const r = this.track.r, n = this.track.n, vis = this.track.vis, h = NEAR.size / 2 - 120;
+    const r = this.track.r, n = this.track.n, vis = Float32Array.from(this.track.vis), h = NEAR.size / 2 - 120;
     const raw = new Float32Array(n).fill(NaN);
     let i0 = n, i1 = -1;
     for (let i = 0; i < n; i++) {
@@ -149,7 +149,7 @@ export class Terrain {
       const v = sampler(x, z);
       if (Number.isFinite(v)) { raw[i] = v; if (i < i0) i0 = i; if (i > i1) i1 = i; }
     }
-    if (i1 < 0) return;
+    if (i1 < 0) return null;
     // median (±3 pts) then gaussian (±~25 m): hedges, walls and pixel noise don't make the road bumpy
     const med = new Float32Array(n).fill(NaN);
     for (let i = i0; i <= i1; i++) {
@@ -160,10 +160,12 @@ export class Terrain {
       med[i] = w[w.length >> 1];
     }
     const sig = Math.max(1, 12 / this.track.step);
+    let firstShift = false;
     // first LiDAR patch: shift the whole road by the measured GPX->LiDAR offset so it stays continuous
     if (!this.visShifted) {
       for (let i = 0; i < n; i++) vis[i] = r.ele[i] - this.base + this._off(i);
       this.visShifted = true;
+      firstShift = true;
       i0 = 0; i1 = n - 1;
     }
     for (let i = 0; i < n; i++) {
@@ -177,7 +179,7 @@ export class Terrain {
       vis[i] = s / ws;
       this.visLidar[i] = 1;
     }
-    this.onRoad(i0, i1);
+    return { vis, i0, i1, firstShift }; // applied together with the new terrain mesh
   }
 
   _off(idx) { const o = this.offset[idx]; return Number.isFinite(o) ? o : 0; }
@@ -276,8 +278,9 @@ export class Terrain {
   }
 
   // ---------- height used for the near patch ----------
-  _blend(x, z, dem) {
+  _blend(x, z, dem, vis = this.track.vis) {
     let [d, e, idx] = this.nearest(x, z, true);
+    if (idx >= 0) e = vis[idx];
     if (idx < 0) {
       // far from the road: only the elevation offset matters -> nearest of a few candidate points
       let best = Infinity;
@@ -285,7 +288,7 @@ export class Terrain {
       for (const i of this.cand) { const dd = (r.x[i] - x) ** 2 + (-r.y[i] - z) ** 2; if (dd < best) { best = dd; idx = i; } }
       if (idx < 0) [d, e, idx] = this.nearest(x, z);
       else if (Number.isFinite(dem)) return this.lidar ? dem : dem - this._off(idx);
-      else return this.sampler ? this.track.vis[idx] : this._blend2(x, z, 1e9, this.track.vis[idx]);
+      else return this.sampler ? vis[idx] : this._blend2(x, z, 1e9, vis[idx]);
     }
     if (!Number.isFinite(dem)) return this.sampler ? e - 0.4 : this._blend2(x, z, d, e);
     const road = e - 0.4;
@@ -416,10 +419,11 @@ export class Terrain {
     const sampler = this.online ? await this._elevSampler(cx, cz, NEAR.size, this.nearZ, this.nearSrc) : null;
     this.nearSampler = sampler;
     if (sampler) this._updateOffsets(sampler, cx, cz, NEAR.size);
-    if (sampler && this.lidar) this._roadFromDem(sampler, cx, cz);
+    const road = sampler && this.lidar ? this._roadFromDem(sampler, cx, cz) : null;
+    const vis = road ? road.vis : this.track.vis;
     const sat = this.online && sampler ? await this._satCanvas(cx, cz, NEAR.size, NEAR.satZ) : null;
     this._setCandidates(cx, cz, NEAR.size);
-    const heightFn = (x, z) => this._blend(x, z, sampler ? sampler(x, z) : NaN);
+    const heightFn = (x, z) => this._blend(x, z, sampler ? sampler(x, z) : NaN, vis);
     const geo = await this._grid(cx, cz, NEAR.size, this.nearSeg, heightFn, sat, (e, ny) => this._fallbackColor(e, ny));
     let tex = null;
     if (sat) {
@@ -435,11 +439,13 @@ export class Terrain {
     if (this.pos && !this._covers({ x: cx, z: cz }, this.pos.x, this.pos.z, 50)) {
       group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
       this.nearCenter = null; // rider teleported meanwhile - build again at the new place
+      if (road && road.firstShift) this.visShifted = false;
       return false;
     }
     this.sampler = sampler;
     this.nearCenter = { x: cx, z: cz };
     this.shownCenter = { x: cx, z: cz };
+    if (road) { this.track.vis.set(road.vis); this.onRoad(road.i0, road.i1); } // road, riders and terrain change in the same frame
     this._swap('near', group);
     if (this.far) this._lowerFar();
     return !!sampler;
