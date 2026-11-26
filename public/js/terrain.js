@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { addClip } from './clip.js';
+import { findTrees, buildBoundaries, treeMeshes } from './objects.js';
 
 // Real terrain from elevation tiles (Terrarium encoding) + satellite imagery, streamed around the rider.
 // Near patch: ~3 km, ~12 m grid, z13 elevation + z14 imagery, trees where the imagery shows forest.
@@ -217,6 +218,118 @@ export class Terrain {
     }
     return this.elevCache.get(key);
   }
+  /** Height of objects above the ground (LiDAR DSM - DTM), Terrarium encoded. Missing = null, never marks us offline. */
+  _objTile(z, x, y) {
+    const key = `${z}/${x}/${y}`;
+    this.objCache = this.objCache || new Map();
+    if (!this.objCache.has(key)) {
+      if (this.objCache.size > 600) this.objCache.delete(this.objCache.keys().next().value);
+      this.objCache.set(key, this._img(`/tiles/ndsm/${key}`).then((bmp) => {
+        const c = document.createElement('canvas'); c.width = c.height = 256;
+        const g = c.getContext('2d', { willReadFrequently: true });
+        g.drawImage(bmp, 0, 0);
+        const d = g.getImageData(0, 0, 256, 256).data;
+        const h = new Float32Array(256 * 256);
+        for (let i = 0; i < h.length; i++) h[i] = d[i * 4] * 256 + d[i * 4 + 1] + d[i * 4 + 2] / 256 - 32768;
+        return h;
+      }).catch(() => null));
+    }
+    return this.objCache.get(key);
+  }
+  /** Sampler over the given tiles (keys "x,y") at zoom z. */
+  async _objSampler(z, keys) {
+    const tiles = new Map();
+    await Promise.all([...keys].map((k) => { const [tx, ty] = k.split(',').map(Number); return this._objTile(z, tx, ty).then((d) => tiles.set(k, d)); }));
+    if ([...tiles.values()].every((t) => !t)) return null;
+    const px = (gx, gy) => {
+      const tx = Math.floor(gx / 256), ty = Math.floor(gy / 256);
+      const t = tiles.get(tx + ',' + ty);
+      if (!t) return NaN;
+      return t[(gy - ty * 256) * 256 + (gx - tx * 256)];
+    };
+    const bil = (gx, gy) => {
+      const ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+      const a = px(ix, iy), b = px(ix + 1, iy), c = px(ix, iy + 1), d = px(ix + 1, iy + 1);
+      return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
+    };
+    const f = (x, zz) => {
+      const [lat, lon] = this.latLon(x, zz);
+      const [tx, ty] = this.tileXY(lat, lon, z);
+      return bil(tx * 256 - 0.5, ty * 256 - 0.5);
+    };
+    // fast regular grid: tile x is linear in our x, tile y depends on the row only
+    f.grid = (x0, z0, step, nx, ny) => {
+      const out = new Float32Array(nx * ny);
+      const [, gx0] = (() => { const [la, lo] = this.latLon(x0, z0); return [0, this.tileXY(la, lo, z)[0] * 256 - 0.5]; })();
+      const [la1, lo1] = this.latLon(x0 + step, z0);
+      const dgx = (this.tileXY(la1, lo1, z)[0] * 256 - 0.5) - gx0;
+      for (let j = 0; j < ny; j++) {
+        const [la, lo] = this.latLon(x0, z0 + j * step);
+        const gy = this.tileXY(la, lo, z)[1] * 256 - 0.5;
+        for (let i = 0; i < nx; i++) out[j * nx + i] = bil(gx0 + i * dgx, gy);
+      }
+      return out;
+    };
+    return f;
+  }
+  _tileKeysForArea(cx, cz, size, z) {
+    const r = this._tileRange(cx, cz, size, z), keys = new Set();
+    for (let ty = r.y0; ty <= r.y1; ty++) for (let tx = r.x0; tx <= r.x1; tx++) keys.add(tx + ',' + ty);
+    return keys;
+  }
+  _tileKeysForRoad(cx, cz, size, z) {
+    const r = this.track.r, h = size / 2, keys = new Set();
+    for (let i = 0; i < this.track.n; i++) {
+      const x = r.x[i], zz = -r.y[i];
+      if (Math.abs(x - cx) > h || Math.abs(zz - cz) > h) continue;
+      for (const [dx, dz] of [[0, 0], [10, 0], [-10, 0], [0, 10], [0, -10]]) {
+        const [lat, lon] = this.latLon(x + dx, zz + dz);
+        const [tx, ty] = this.tileXY(lat, lon, z);
+        keys.add(Math.floor(tx) + ',' + Math.floor(ty));
+      }
+    }
+    return keys;
+  }
+
+  /** Trees, hedges and walls from LiDAR, added to a near patch once their data arrives. */
+  async _addObjects(group, cx, cz, heightFn, sat) {
+    const size = NEAR.size - 100;
+    const objT = await this._objSampler(15, this._tileKeysForArea(cx, cz, size, 15));
+    if (this.near !== group) return;
+    if (!objT) { // no LiDAR surface model here (outside Wales): trees guessed from the imagery
+      group.add(await this._trees(cx, cz, size, heightFn, sat));
+      return;
+    }
+    const data = sat ? sat.ctx.getImageData(0, 0, sat.W, sat.H).data : null;
+    const satRGB = (x, z) => {
+      if (!data) return null;
+      const [u, v] = sat.uv(x, z);
+      const px = Math.floor(u * sat.W), py = Math.floor((1 - v) * sat.H);
+      if (px < 0 || py < 0 || px >= sat.W || py >= sat.H) return null;
+      const i = (py * sat.W + px) * 4;
+      return [data[i], data[i + 1], data[i + 2]];
+    };
+    const trees = await findTrees(objT, cx, cz, size, {
+      nearRoad: (x, z) => this.nearest(x, z, true)[0],
+      isRoof: (x, z) => { const c = satRGB(x, z); return !!c && c[0] > c[1] + 8 && c[0] + c[1] + c[2] > 200; },
+    });
+    for (const t of trees) { // darker, bluer canopy in the imagery = conifer plantation
+      const c = satRGB(t.x, t.z);
+      if (c) t.conifer = (c[0] + c[1] + c[2]) / 3 < 55 && c[2] >= c[0] * 0.85;
+    }
+    if (this.near !== group) return;
+    group.add(treeMeshes(trees, heightFn));
+    this.treeCount = trees.length;
+
+    const objF = await this._objSampler(17, this._tileKeysForRoad(cx, cz, size, 17));
+    if (this.near !== group || !objF) return;
+    const h = size / 2;
+    const b = await buildBoundaries(this.track, objF, heightFn, (x, z) => Math.abs(x - cx) < h && Math.abs(z - cz) < h, (x, z) => this.nearest(x, z, true)[0]);
+    if (this.near !== group || !b) return;
+    group.add(b);
+    this.boundaryCount = b.userData.count;
+  }
+
   _satTile(z, x, y) {
     const key = `${z}/${x}/${y}`;
     if (!this.satCache.has(key)) this.satCache.set(key, this._img(`/tiles/sat/${key}`).catch(() => null));
@@ -409,7 +522,7 @@ export class Terrain {
       this.scene.remove(old);
       old.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+        if (o.material) { if (o.material.map && !o.userData.keepMap) o.material.map.dispose(); o.material.dispose(); }
       });
     }
     this[slot] = obj;
@@ -436,9 +549,9 @@ export class Terrain {
     mesh.receiveShadow = true;
     const group = new THREE.Group();
     group.add(mesh);
-    group.add(await this._trees(cx, cz, NEAR.size - 100, heightFn, sat));
+    if (!(this.lidar && this.online)) group.add(await this._trees(cx, cz, NEAR.size - 100, heightFn, sat));
     if (this.pos && !this._covers({ x: cx, z: cz }, this.pos.x, this.pos.z, 50)) {
-      group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+      group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map && !o.userData.keepMap) o.material.map.dispose(); o.material.dispose(); } });
       this.nearCenter = null; // rider teleported meanwhile - build again at the new place
       if (road && road.firstShift) this.visShifted = false;
       return false;
@@ -449,6 +562,7 @@ export class Terrain {
     if (road) { this.track.vis.set(road.vis); this.onRoad(road.i0, road.i1); } // road, riders and terrain change in the same frame
     this._swap('near', group);
     if (this.far) this._lowerFar();
+    if (this.lidar && this.online) this._addObjects(group, cx, cz, heightFn, sat).catch((e) => console.warn('LiDAR objects failed', e));
     return !!sampler;
   }
 

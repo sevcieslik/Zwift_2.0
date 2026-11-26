@@ -62,6 +62,10 @@ Zmienne środowiskowe (opcjonalne):
 | `TILE_CACHE_DIR` | Katalog pamięci podręcznej kafli (domyślnie katalog tymczasowy) |
 | `TILE_MOCK=1` | Teren testowy bez internetu (do pracy lokalnej) |
 
+### Drzewa, żywopłoty i murki z lidaru
+
+W Walii gra pobiera też model powierzchni (LiDAR DSM 1 m, ten sam serwer co DTM). Różnica DSM − DTM to wysokość tego, co stoi na ziemi. Z niej gra stawia drzewa w miejscach prawdziwych koron, z prawdziwą wysokością i szerokością, a wzdłuż drogi żywopłoty (≥ 1,35 m) i kamienne murki (niższe). Poza Walią drzewa są zgadywane ze zdjęć satelitarnych jak wcześniej. Pierwsze wczytanie okolicy trwa dłużej (serwer czyta dwa pliki lidaru), potem kafle są w cache.
+
 ### Google Photorealistic 3D Tiles (opcjonalnie)
 
 Przycisk **🗺️ Teren** w grze przełącza trzy tryby: **Lidar** (własny teren + zdjęcia satelitarne), **Lidar + Google** (własny teren i droga do ~200 m od kolarza, dalej fotorealistyczny model Google – zalecany) oraz **Google 3D** (tylko model Google; z poziomu drogi żywopłoty i drzewa wyglądają jak bryły). Do tego potrzebny jest klucz Google Map Tiles API:
@@ -133,6 +137,7 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/camera.js` | Kamera: widoki, obrót myszą, zoom |
 | `public/js/warp.js` | Efekt hiper focus (post-processing, smugi, punkt skupienia) |
 | `lib/osm.js` | Dopasowanie trasy GPS do dróg z OpenStreetMap |
+| `public/js/objects.js` | Drzewa, żywopłoty i murki z lidaru (DSM − DTM) |
 | `public/js/clip.js` | Przenikanie terenu własnego (blisko) i Google (daleko) |
 | `public/js/google3d.js` | Google Photorealistic 3D Tiles (3DTilesRendererJS) w układzie gry |
 | `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |
