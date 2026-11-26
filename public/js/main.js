@@ -45,7 +45,7 @@ function showPicker() {
       <button class="edit ghost" data-edit="${esc(p.id)}" title="Edytuj">✏️</button>
       <span class="big-av">${esc(p.appearance.avatar)}</span>
       <b>${esc(p.name)}</b>
-      <span class="muted small">${p.weight} kg · ${p.height} cm</span>
+      <span class="muted small">${p.weight} kg · ${p.height} cm · FTP ${p.ftp || 200} W</span>
       <span class="stripe" style="background:${esc(colorOf(p))}"></span>
     </div>`).join('') + '<div class="pcard new" data-new="1"><span class="big-av">➕</span><b>Nowy profil</b></div>';
   show('pickProfile');
@@ -68,6 +68,8 @@ async function editProfile(p, isNew) {
   $('pName').value = editing.name;
   $('pWeight').value = editing.weight;
   $('pHeight').value = editing.height;
+  $('pFtp').value = editing.ftp || 200;
+  $('pSprint').value = editing.sprintX || 3;
   $('pErr').textContent = '';
   show('editProfile');
   await kitsReady;
@@ -88,7 +90,10 @@ $('pSave').onclick = () => {
   if (!name) return ($('pErr').textContent = 'Podaj imię');
   if (!(weight >= 30 && weight <= 200)) return ($('pErr').textContent = 'Waga 30–200 kg');
   if (!(height >= 120 && height <= 220)) return ($('pErr').textContent = 'Wzrost 120–220 cm');
-  Object.assign(editing, { name, weight, height, appearance: editorApi.get() });
+  const ftp = Number($('pFtp').value), sprintX = Number($('pSprint').value);
+  if (!(ftp >= 50 && ftp <= 600)) return ($('pErr').textContent = 'FTP 50–600 W');
+  if (!(sprintX >= 1.2 && sprintX <= 5)) return ($('pErr').textContent = 'Próg hiper focus 1,2–5 × FTP');
+  Object.assign(editing, { name, weight, height, ftp, sprintX, appearance: editorApi.get() });
   saveProfile(editing);
   useProfile(editing);
 };

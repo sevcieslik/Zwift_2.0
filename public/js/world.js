@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { KITS } from './kits.js';
 import { RiderModel } from './rider.js';
 import { Terrain } from './terrain.js';
+import { CameraRig } from './camera.js';
+import { WarpFX } from './warp.js';
 
 // ---------- Route helpers ----------
 export class Track {
@@ -111,6 +113,10 @@ export class World {
     this.terrain = new Terrain(this.scene, this.track, (x, z, lim) => this.nearest(x, z, lim), { lidar: opts.lidar });
     this.riders = new Map();
     this.camPos = null;
+    this.scene.add(this.camera); // camera children (warp streaks) must be in the scene
+    this.rig = new CameraRig(this.camera, canvas);
+    this.fx = new WarpFX(this.renderer, this.scene, this.camera);
+    this._dir = new THREE.Vector3(); this._focus = new THREE.Vector3();
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -144,6 +150,7 @@ export class World {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (this.fx) this.fx.setSize(w, h);
   }
 
   _buildIndex() {
@@ -238,7 +245,7 @@ export class World {
     this.scene.add(arch);
   }
 
-  resetCamera() { this.camPos = null; }
+  resetCamera() { this.rig.pos = null; }
 
   _laneOffset(id) {
     let h = 0;
@@ -249,7 +256,7 @@ export class World {
   /**
    * riders: [{ id, name, color, dist, speed, cadence, me }]
    */
-  render(dt, riders) {
+  render(dt, riders, opts = {}) {
     const seen = new Set();
     let me = null;
     for (const rd of riders) {
@@ -282,7 +289,7 @@ export class World {
         const k = Math.max(1, d / 25);
         m.label.scale.set(2.9 * k, 0.6 * k, 1);
       }
-      if (rd.me) me = { s, m };
+      if (rd.me) me = { s, m, dist: rd.dist };
     }
     for (const [id, m] of this.riders) {
       if (!seen.has(id)) { this.scene.remove(m.group); m.dispose(); this.riders.delete(id); }
@@ -292,18 +299,16 @@ export class World {
       const { s, m } = me;
       const p = m.group.position;
       this.terrain.update(p.x, p.z);
-      const back = this.track.sample(Math.max(0, (riders.find((r) => r.me).dist) - 5.5));
-      const target = new THREE.Vector3(back.x - s.dz * 0.6, Math.max(back.y, s.y) + 2.0, back.z + s.dx * 0.6);
-      const th = this.terrainHeight(target.x, target.z);
-      if (target.y < th + 1.5) target.y = th + 1.5;
-      if (!this.camPos) this.camPos = target.clone();
-      this.camPos.lerp(target, 1 - Math.exp(-dt * 4));
-      this.camera.position.copy(this.camPos);
-      const ahead = this.track.sample(riders.find((r) => r.me).dist + 10);
-      this.camera.lookAt(ahead.x, ahead.y + 1.0, ahead.z);
+      const dir = this._dir.set(s.dx, 0, s.dz).normalize();
+      m.group.visible = !this.rig.fpv;
+      const warp = opts.warp || 0;
+      this.rig.update(dt, p, dir, (x, z) => this.terrainHeight(x, z), warp);
+      this.camPos = this.camera.position;
+      const f = this.track.sample(me.dist + 35);
+      this.fx.update(dt, warp, this._focus.set(f.x, f.y + 1.0, f.z));
       this.sun.position.copy(p).addScaledVector(this.sunDir, 120);
       this.sun.target.position.copy(p);
     }
-    this.renderer.render(this.scene, this.camera);
+    this.fx.render();
   }
 }

@@ -36,6 +36,11 @@
               <label>Waga (kg) <input id="pWeight" type="number" min="30" max="200" /></label>
               <label>Wzrost (cm) <input id="pHeight" type="number" min="120" max="220" /></label>
             </div>
+            <div class="grid2">
+              <label>FTP (W) <input id="pFtp" type="number" min="50" max="600" /></label>
+              <label>Hiper focus od (× FTP) <input id="pSprint" type="number" min="1.2" max="5" step="0.1" /></label>
+            </div>
+            <p class="muted small" style="margin:-4px 0 8px">Gdy przez 3 s utrzymasz moc powyżej progu (np. 3 × FTP w sprincie), kamera wchodzi w tryb „hiper focus”.</p>
             <div id="pLook" class="editor"></div>
           </div>
         </div>
@@ -89,6 +94,9 @@
     </div>
 
     <div id="eventBar" class="hidden"></div>
+    <div id="warpLabel">HIPER FOCUS</div>
+    <div id="camToast" class="hidden"></div>
+    <div id="camHint">🖱 Przeciągnij, aby obrócić kamerę · kółko: przybliż / oddal · C: zmień widok · dwuklik: reset</div>
     <div id="banner" class="hidden"></div>
     <div id="draft" class="hidden">🌀 Jedziesz w tunelu</div>
 
@@ -129,7 +137,16 @@
       <label class="slider">Trudność trenera <span id="diffVal">50%</span>
         <input id="difficulty" type="range" min="0" max="100" value="50" /></label>
       <label class="slider" id="manualWrap">Moc ręczna (bez trenera) <span id="manVal">0 W</span>
-        <input id="manual" type="range" min="0" max="600" step="5" value="0" /></label>
+        <input id="manual" type="range" min="0" max="1500" step="5" value="0" /></label>
+      <button id="testBtn" class="small-btn">🧪 Tryb testowy</button>
+      <div id="testPanel" class="test-panel hidden">
+        <div class="row"><span class="small">Szybkość czasu</span>
+          <select id="tSpeed"><option value="1">×1</option><option value="2">×2</option><option value="5">×5</option><option value="20">×20</option></select></div>
+        <div class="row"><input id="tKm" type="number" min="0" step="0.5" placeholder="km" /><button id="tJump" class="small-btn">Skocz do km</button></div>
+        <button id="tSprint" class="small-btn">⚡ Test sprintu (8 s)</button>
+        <div class="row"><span class="small">Kamera</span><select id="tView"></select></div>
+        <p class="muted small">W trybie testowym jazda nie jest nagrywana.</p>
+      </div>
       <p id="trainerStatus" class="muted small">Trener niepodłączony – możesz jechać suwakiem lub strzałkami ↑ ↓</p>
     </div>
 

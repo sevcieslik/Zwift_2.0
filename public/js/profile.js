@@ -29,7 +29,7 @@ export function defaultAppearance() {
 }
 
 export function newProfile() {
-  return { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: '', weight: 75, height: 178, appearance: defaultAppearance() };
+  return { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: '', weight: 75, height: 178, ftp: 200, sprintX: 3, appearance: defaultAppearance() };
 }
 
 export function loadProfiles() {
@@ -111,4 +111,15 @@ export function appearanceEditor(root, appearance, onChange) {
     emit();
   };
   return { get: () => ({ ...a }) };
+}
+
+/** Zwift-style power zone colour for a fraction of FTP. */
+export function zoneColor(frac) {
+  if (!(frac > 0)) return '#9aa3ad';
+  if (frac < 0.6) return '#9aa3ad';
+  if (frac < 0.76) return '#3d8bfd';
+  if (frac < 0.9) return '#3cc46a';
+  if (frac < 1.05) return '#ffd21f';
+  if (frac < 1.19) return '#ff8a1f';
+  return '#ff3b30';
 }

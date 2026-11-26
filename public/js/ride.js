@@ -3,7 +3,8 @@ import { Physics, draftFactor } from './physics.js';
 import { Trainer, HeartRate, bluetoothAvailable } from './trainer.js';
 import { Voice } from './voice.js';
 import { Profile, MiniMap } from './hud.js';
-import { cdaFor, saveProfile, appearanceEditor } from './profile.js';
+import { cdaFor, saveProfile, appearanceEditor, zoneColor } from './profile.js';
+import { VIEWS } from './camera.js';
 import { RiderPreview } from './preview.js';
 import { KITS } from './kits.js';
 import { Recorder, summarize, download, saveRide, saveDraft, clearDraft } from './recorder.js';
@@ -59,6 +60,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     dist: 0, lap: 0, power: 0, cadence: 0, hr: 0, elapsed: 0,
     finished: false, finishTime: 0, hostId: room.hostId, event: room.event,
     manual: 0, difficulty: 0.5, draft: 0, paused: false, saved: false,
+    test: false, timeScale: 1, sprintTestUntil: 0, warp: 0, warpOn: false,
   };
   let others = new Map();
   let clockOffset = room.now - Date.now();
@@ -191,9 +193,11 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   window.addEventListener('keydown', (e) => {
     if (document.activeElement === $('chatIn') || modalOpen() || e.target.tagName === 'INPUT') return;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      state.manual = Math.max(0, Math.min(600, state.manual + (e.key === 'ArrowUp' ? 10 : -10)));
+      state.manual = Math.max(0, Math.min(1500, state.manual + (e.key === 'ArrowUp' ? 10 : -10)));
       $('manual').value = state.manual; $('manVal').textContent = state.manual + ' W';
       e.preventDefault();
+    } else if (e.key === 'c' || e.key === 'C') {
+      world.rig.next();
     } else if (e.key === 'm' || e.key === 'M') {
       if (voice.active) voice.setMuted(!voice.muted);
     } else if (e.key === 'Enter') {
@@ -306,6 +310,53 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     location.href = '/';
   };
 
+  // ---------- Hyper focus (sprint) ----------
+  const powerHist = []; // [t, W]
+  function updateWarp(now) {
+    powerHist.push([now, state.power]);
+    while (powerHist.length && now - powerHist[0][0] > 3000) powerHist.shift();
+    const avg = powerHist.reduce((s, p) => s + p[1], 0) / powerHist.length;
+    const thr = (profile.ftp || 200) * (profile.sprintX || 3);
+    const full = now - powerHist[0][0] > 2500; // at least ~3 s of data
+    if (!state.warpOn && full && avg >= thr && !state.paused) state.warpOn = true;
+    else if (state.warpOn && (avg < thr * 0.85 || state.paused)) state.warpOn = false;
+  }
+
+  // ---------- Test mode & camera ----------
+  $('tView').innerHTML = VIEWS.map((v, i) => `<option value="${i}">${v.name}</option>`).join('');
+  $('tView').onchange = (e) => world.rig.setView(Number(e.target.value));
+  let toastTimer = 0;
+  world.rig.addEventListener('view', (e) => {
+    $('tView').value = world.rig.view;
+    $('camToast').textContent = '🎥 ' + e.detail;
+    $('camToast').classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $('camToast').classList.add('hidden'), 1400);
+  });
+  setTimeout(() => $('camHint').classList.add('fade'), 9000);
+  $('testBtn').onclick = () => {
+    state.test = !state.test;
+    $('testPanel').classList.toggle('hidden', !state.test);
+    $('testBtn').classList.toggle('on', state.test);
+    $('testBtn').textContent = state.test ? '🧪 Tryb testowy: WŁ.' : '🧪 Tryb testowy';
+    if (state.test) {
+      recorder.newSegment();
+      if (!state.manual && !trainer.connected) { state.manual = 200; $('manual').value = 200; $('manVal').textContent = '200 W'; }
+      addChat({ system: true, text: 'Tryb testowy: jazda nie jest nagrywana. Moc ustawisz suwakiem lub strzałkami ↑ ↓.' });
+    } else {
+      state.timeScale = 1; $('tSpeed').value = '1';
+      recorder.newSegment();
+    }
+  };
+  $('tSpeed').onchange = (e) => { state.timeScale = Number(e.target.value); };
+  $('tJump').onclick = () => {
+    const km = Number($('tKm').value);
+    if (!Number.isFinite(km)) return;
+    leaveEventIfWaiting();
+    setAbs(Math.max(0, Math.min(route.total - 1, km * 1000)), physics.v);
+  };
+  $('tSprint').onclick = () => { state.sprintTestUntil = Date.now() + 8000; };
+
   // ---------- Timers ----------
   let lastSentGrade = null, lastSentAt = 0;
   setInterval(() => {
@@ -327,7 +378,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
 
   // Record 1 sample per second while riding
   setInterval(() => {
-    if (state.paused || waitingForEvent() || state.finished) return;
+    if (state.paused || waitingForEvent() || state.finished || state.test) return;
     if (physics.v < 0.1 && recorder.samples.length === 0) return;
     const s = track.sample(state.dist);
     recorder.add({ x: s.x, y: -s.z, ele: s.ele, power: state.power, hr: state.hr, cadence: state.cadence, speed: physics.v });
@@ -342,13 +393,15 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   let wasWaiting = false;
   function simulate() {
     const now = performance.now();
-    let total = Math.min(30, (now - simLast) / 1000); // background tabs tick ~1/s
+    let total = Math.min(30, (now - simLast) / 1000) * (state.test ? state.timeScale : 1); // background tabs tick ~1/s
     simLast = now;
 
     const trainerLive = trainer.connected && now - trainer.lastData < 3000;
     state.power = trainerLive ? trainer.power : trainer.connected ? 0 : state.manual;
+    if (Date.now() < state.sprintTestUntil) state.power = Math.round((profile.ftp || 200) * (profile.sprintX || 3) * 1.15);
     state.cadence = trainerLive ? trainer.cadence : 0;
     state.hr = hrm.connected ? hrm.hr : 0;
+    updateWarp(now);
 
     const waiting = waitingForEvent();
     if (wasWaiting && !waiting && isParticipant()) state.elapsed = 0;
@@ -398,12 +451,16 @@ export async function startRide({ code, routeId, profile, start, onError }) {
       riders.push({ id: o.id, name: o.name, appearance: o.appearance, height: o.height, color: o.color,
         dist: ((o.disp % route.total) + route.total) % route.total, speed: o.speed, cadence: o.cadence });
     }
-    world.render(dt, riders);
+    state.warp += ((state.warpOn ? 1 : 0) - state.warp) * (1 - Math.exp(-dt * (state.warpOn ? 2.5 : 1.4)));
+    if (state.warp < 0.002) state.warp = 0;
+    world.render(dt, riders, { warp: state.warp });
+    $('ride').classList.toggle('warp', state.warp > 0.5);
 
     uiTimer += dt;
     if (uiTimer > 0.2) {
       uiTimer = 0;
       $('sPower').textContent = Math.round(state.power);
+      $('sPower').style.color = zoneColor(state.power / (profile.ftp || 200));
       $('sSpeed').textContent = (physics.v * 3.6).toFixed(1);
       $('sCad').textContent = state.cadence ? Math.round(state.cadence) : '–';
       $('sHr').textContent = state.hr || '–';

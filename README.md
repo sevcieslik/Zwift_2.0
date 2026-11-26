@@ -30,7 +30,13 @@ Jazda po własnej trasie GPX w 3D, trochę jak w Zwifcie, razem ze znajomymi z k
 
    Po wgraniu ustaw typ aktywności na „Jazda wirtualna”. Jeśli karta się zamknie w trakcie jazdy, przejazd zostanie odzyskany jako szkic przy następnym wejściu.
 
-Skróty klawiszowe: `↑`/`↓` zmieniają moc ręczną, `M` wycisza mikrofon, `Enter` otwiera czat.
+Skróty klawiszowe: `↑`/`↓` zmieniają moc ręczną, `M` wycisza mikrofon, `Enter` otwiera czat, `C` zmienia widok kamery.
+
+**Kamera:** przeciągnij myszą, żeby obrócić kamerę wokół kolarza. Kółko przybliża i oddala (aż do widoku z góry), dwuklik wraca do ustawień domyślnych. Dostępne widoki: za kolarzem, z bliska, z boku, z przodu, dron, z góry (mapa) i pierwsza osoba.
+
+**🧪 Tryb testowy** pozwala sprawdzić trasę bez trenera: moc wirtualna (suwak lub strzałki), przyspieszenie czasu ×2/×5/×20, skok do wybranego kilometra, test sprintu i wybór kamery. W tym trybie jazda nie jest nagrywana.
+
+**Hiper focus.** W profilu podajesz FTP i próg (domyślnie 3 × FTP). Gdy średnia moc z 3 s przekroczy próg, kamera wchodzi w tryb sprintu: obraz rozmywa się promieniście jak przy „warp speed”, krawędzie ciemnieją, lecą smugi światła, a interfejs przygasa. Zostaje tylko świecący punkt na drodze przed Tobą. Efekt wyłącza się, gdy moc spadnie poniżej 85% progu. Kolor liczby mocy pokazuje strefę względem FTP.
 
 Gra liczy jazdę także wtedy, gdy karta jest w tle, ale najlepiej trzymać ją na pierwszym planie.
 
@@ -109,6 +115,8 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/ride.js` | Logika jazdy: teleporty, eventy, garderoba, podsumowanie |
 | `public/js/rider.js` | Model kolarza i roweru (nogi na pedałach liczone na bieżąco) |
 | `public/js/terrain.js` | Teren z danych wysokościowych i zdjęć satelitarnych, drzewa |
+| `public/js/camera.js` | Kamera: widoki, obrót myszą, zoom |
+| `public/js/warp.js` | Efekt hiper focus (post-processing, smugi, punkt skupienia) |
 | `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |
 | `lib/lidar.js`, `lib/bng.js` | Kafle wysokości z lidaru (COG) i przeliczanie GPS → brytyjski układ współrzędnych |
 

@@ -175,3 +175,23 @@ details[open] summary { margin-bottom: 10px; }
 
 #attrib { position: absolute; right: 12px; bottom: 132px; font-size: 10px; color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; pointer-events: none; }
 #minimap { bottom: 150px; }
+
+/* ---------- Test mode, camera, hyper focus ---------- */
+.test-panel { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #2c3442; padding-top: 8px; }
+.test-panel select, .test-panel input { padding: 4px 6px; font-size: 12px; }
+.test-panel .row span { flex: 0 0 auto; margin-right: 6px; }
+#testBtn.on { background: #6a4a10; border-color: #b8801e; }
+#view { cursor: grab; }
+#view:active { cursor: grabbing; }
+#camHint { position: absolute; left: 50%; bottom: 140px; transform: translateX(-50%); background: rgba(0,0,0,.55); padding: 6px 14px;
+  border-radius: 20px; font-size: 13px; pointer-events: none; transition: opacity 1s; white-space: nowrap; }
+#camHint.fade { opacity: 0; }
+#camToast { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); background: rgba(0,0,0,.6); padding: 8px 18px;
+  border-radius: 10px; font-size: 18px; font-weight: 700; pointer-events: none; }
+#warpLabel { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); font-weight: 900; letter-spacing: .5em; font-size: 22px;
+  color: #dff1ff; text-shadow: 0 0 18px #4aa8ff, 0 0 4px #fff; opacity: 0; pointer-events: none; transition: opacity .4s; }
+#ride.warp #warpLabel { opacity: .9; }
+#ride .panel, #ride #eventBar, #ride #attrib { transition: opacity .5s; }
+#ride.warp .panel:not(#stats), #ride.warp #attrib, #ride.warp #chat { opacity: .12; }
+#ride.warp #stats .stat:not(.big) { opacity: .35; }
+#ride.warp #stats .stat.big span { text-shadow: 0 0 14px currentColor; }
