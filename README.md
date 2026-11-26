@@ -40,15 +40,6 @@ Skróty klawiszowe: `↑`/`↓` zmieniają moc ręczną, `M` wycisza mikrofon, `
 
 Gra liczy jazdę także wtedy, gdy karta jest w tle, ale najlepiej trzymać ją na pierwszym planie.
 
-## Postacie
-
-Kolarze to postacie z pakietu **[Low Poly People](https://davidjalbert.itch.io/low-poly-people)** autorstwa David Jalbert, na licencji [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Pliki są w `public/models/people/`. Przy wczytywaniu gra je przerabia:
-- wydłuża nogi i ręce oraz zmniejsza głowę, dłonie i stopy (pakiet ma kreskówkowe proporcje),
-- zamienia ubrania na strój kolarski (koszulka z nadrukiem, spodenki, skarpetki, buty, rękawiczki),
-- przekolorowuje skórę i włosy według profilu i dodaje kask albo czapeczkę oraz okulary.
-
-Kości są ustawiane w każdej klatce: tułów pochylony nad kierownicą, ręce na klamkach, nogi na pedałach. W profilu można wybrać jedną z 18 sylwetek albo „Klasyczny” (prosty, gładki model bez twarzy).
-
 ## Teren i grafika
 
 Teren 3D buduje się z prawdziwych danych dla okolicy trasy:
@@ -70,6 +61,17 @@ Zmienne środowiskowe (opcjonalne):
 | `SAT_TILES_URL` | Inne źródło zdjęć satelitarnych (`{z}/{x}/{y}`) |
 | `TILE_CACHE_DIR` | Katalog pamięci podręcznej kafli (domyślnie katalog tymczasowy) |
 | `TILE_MOCK=1` | Teren testowy bez internetu (do pracy lokalnej) |
+
+### Google Photorealistic 3D Tiles (opcjonalnie)
+
+Przycisk **🗺️ Teren** w grze przełącza między własnym terenem (lidar + zdjęcia satelitarne) a fotorealistycznym modelem 3D od Google. Do tego potrzebny jest klucz Google Map Tiles API:
+
+1. W Google Cloud Console utwórz projekt, dodaj konto rozliczeniowe i włącz **Map Tiles API**.
+2. Utwórz klucz API. W ograniczeniach ustaw: API → tylko Map Tiles API; Websites → `http://localhost:3000/*` oraz adres gry na Renderze, np. `https://twoja-gra.onrender.com/*`.
+3. Ustaw w Quotas limit „3D Tiles root requests per day” (np. 300) oraz budżet z alertem.
+4. Ustaw zmienną środowiskową `GOOGLE_MAPS_KEY`: lokalnie w PowerShell `$env:GOOGLE_MAPS_KEY="..."` przed `npm start`, a na Renderze w zakładce Environment.
+
+Klucz trafia do przeglądarki graczy, bo Google wymaga zapytań wprost z przeglądarki. Dlatego ograniczenie do adresów strony jest konieczne. Gra przesuwa układ współrzędnych za kolarzem (krzywizna Ziemi) i sama dopasowuje wysokość modelu Google do drogi. Jeśli kafle się nie wczytają, gra wraca do własnego terenu.
 
 ## Dodawanie tras
 
@@ -123,10 +125,10 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/recorder.js` | Zapis jazdy, historia, eksport GPX/TCX |
 | `public/js/ride.js` | Logika jazdy: teleporty, eventy, garderoba, podsumowanie |
 | `public/js/rider.js` | Rower i kolarz (nogi na pedałach liczone na bieżąco) |
-| `public/js/person.js` | Postacie Low Poly People: przeróbka modelu, strój, pozowanie kości |
 | `public/js/terrain.js` | Teren z danych wysokościowych i zdjęć satelitarnych, drzewa |
 | `public/js/camera.js` | Kamera: widoki, obrót myszą, zoom |
 | `public/js/warp.js` | Efekt hiper focus (post-processing, smugi, punkt skupienia) |
+| `public/js/google3d.js` | Google Photorealistic 3D Tiles (3DTilesRendererJS) w układzie gry |
 | `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |
 | `lib/lidar.js`, `lib/bng.js` | Kafle wysokości z lidaru (COG) i przeliczanie GPS → brytyjski układ współrzędnych |
 

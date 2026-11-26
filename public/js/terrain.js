@@ -504,9 +504,12 @@ export class Terrain {
   /** Call every frame with the rider position. */
   update(x, z) {
     this.pos = { x, z };
+    if (this.near) this.near.visible = !this.hidden;
+    if (this.hidden) { if (this.far) this.far.visible = false; return; } // Google 3D Tiles mode
     // After a teleport there may be no ground under the rider yet: put a quick procedural patch down.
     if (!this._covers(this.shownCenter, x, z, 50)) this.bootstrap(x, z);
     if (this.far) this.far.visible = this._covers(this.nearCenter, x, z, 300);
+    if (this.near) this.near.visible = true;
 
     const ncx = Math.round(x / NEAR.snap) * NEAR.snap, ncz = Math.round(z / NEAR.snap) * NEAR.snap;
     if (!this.nearBusy && (!this.nearCenter || this.nearCenter.x !== ncx || this.nearCenter.z !== ncz)) {

@@ -1,4 +1,3 @@
-import { BODIES } from './person.js';
 // Rider profiles stored in the browser (several per device: e.g. you and your partner).
 
 export const AVATARS = ['🚴', '🚴‍♀️', '🦊', '🐻', '🐼', '🐯', '🦁', '🐸', '🐺', '🦅', '🐝', '🦄', '🐧', '🐙', '🐢', '⚡', '🔥', '⛰️'];
@@ -26,7 +25,6 @@ export function defaultAppearance() {
     hair: 'none', // none | ponytail
     hairColor: '#5b3a1e',
     kit: '', // '' = own colours, 'uect' = club kit
-    body: 'normal-man-a', // character model (Low Poly People)
   };
 }
 
@@ -73,7 +71,6 @@ export function appearanceEditor(root, appearance, onChange) {
       <button type="button" data-v="" class="${!a.kit ? 'sel' : ''}">Własne kolory</button>
       <button type="button" data-v="uect" class="${a.kit === 'uect' ? 'sel' : ''}">🦅 Klubowy UECT</button></div></div>
     <p class="muted small kit-note">Strój klubowy zastępuje kolory koszulki, spodenek, skarpetek i nakrycia głowy.</p>
-    <div class="ed-row"><span>Sylwetka</span><select data-key="body">${BODIES.map(([v, l]) => `<option value="${v}"${a.body === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="ed-row"><span>Avatar</span><div class="avatars">${AVATARS.map((x) =>
       `<button type="button" class="av${a.avatar === x ? ' sel' : ''}" data-av="${x}">${x}</button>`).join('')}</div></div>
     <div class="ed-row"><span>Koszulka</span>${sw('jersey', JERSEYS)}</div>

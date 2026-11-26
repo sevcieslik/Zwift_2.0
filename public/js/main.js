@@ -4,9 +4,6 @@ import { kitsReady, KITS } from './kits.js';
 import { loadRides, deleteRide, saveRide, summarize, download, loadDraft, clearDraft } from './recorder.js';
 import { bluetoothAvailable } from './trainer.js';
 import { startRide } from './ride.js';
-import { preloadBodies } from './person.js';
-
-const bodiesReady = preloadBodies(); // 18 small character models, loaded in the background
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -76,7 +73,6 @@ async function editProfile(p, isNew) {
   $('pErr').textContent = '';
   show('editProfile');
   await kitsReady;
-  await bodiesReady;
   if (!preview) preview = new RiderPreview($('preview'));
   preview.set(editing.appearance, editing.height);
   editorApi = appearanceEditor($('pLook'), editing.appearance, (a) => { editing.appearance = a; preview.set(a, editing.height); });
@@ -185,7 +181,6 @@ async function go(opts) {
   $('joinErr').textContent = '';
   try {
     await kitsReady;
-    await bodiesReady;
     if (preview) { preview.dispose(); preview = null; }
     await startRide({ ...opts, profile, onError: (msg) => { $('joinErr').textContent = msg; } });
   } catch (e) {

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { kitMaterials } from './kits.js';
-import { bodyReady, Person, personMaterials, DEFAULT_BODY } from './person.js';
 
 // Detailed low-poly cyclist on a road bike. Units: metres. Forward = +Z, up = +Y, +X = rider's left.
 // Legs are driven by 2-bone IK so the feet stay on the pedals.
@@ -21,7 +20,7 @@ function shapeGeo(prof, len, seg = 14) {
 }
 
 /** Torso: tapered (narrow waist, broad chest), uniform v along the length so the jersey print isn't distorted. */
-function torsoGeo(len, seg = 28) {
+function torsoGeo(len, seg = 40, arch = 0.05) {
   const pts = [];
   const N = 22;
   for (let i = 0; i <= N; i++) {
@@ -30,7 +29,15 @@ function torsoGeo(len, seg = 28) {
     const r = i === 0 || i === N ? 0.0001 : base * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(t - 0.5) * 2, 6)), 0.5);
     pts.push(new THREE.Vector2(r, -0.06 + t * (len + 0.1)));
   }
-  return new THREE.LatheGeometry(pts, seg);
+  const g = new THREE.LatheGeometry(pts, seg);
+  // rounded back: push the middle of the torso towards local -Z (the back)
+  const p = g.attributes.position, y0 = -0.06, y1 = len + 0.04;
+  for (let i = 0; i < p.count; i++) {
+    const t = (p.getY(i) - y0) / (y1 - y0);
+    p.setZ(i, p.getZ(i) - arch * Math.sin(Math.PI * Math.min(1, Math.max(0, t))));
+  }
+  g.computeVertexNormals();
+  return g;
 }
 
 function limbGeo(r1, r2, len, seg = 14) {
@@ -210,9 +217,6 @@ export class RiderModel {
     }
 
     // ---------- rider ----------
-    const base = bodyReady(a.body || DEFAULT_BODY);
-    if (base) this._buildPerson(base, a, kit, headM, lens, black);
-    if (!base) { // fallback: primitive-shape rider (character models not loaded)
     const body = new THREE.Group();
     root.add(body);
     this.body = body;
@@ -226,7 +230,7 @@ export class RiderModel {
     torso.scale.set(1.3, pelvisC.distanceTo(neck) / 0.5 * 1.0, 0.86);
     body.add(torso);
     const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 14), pelvisM);
-    pelvis.position.copy(pelvisC).add(V(0, -0.025, -0.01)); pelvis.scale.set(1.22, 0.85, 1.15);
+    pelvis.position.copy(pelvisC).add(V(0, -0.02, -0.025)); pelvis.scale.set(1.25, 0.9, 1.2);
     body.add(pelvis);
 
     // neck + head (looking up the road)
@@ -282,17 +286,25 @@ export class RiderModel {
       body.add(pt);
     }
 
+    // shoulders (deltoids) blend the torso into the sleeves
+    const deltM = kit ? std(0xf4f4f4, 0.6) : std(a.jersey, 0.6);
+    this._mats.push(deltM);
+    for (const sx of [-1, 1]) {
+      const d = new THREE.Mesh(new THREE.SphereGeometry(0.068, 18, 14), deltM);
+      d.position.set(sx * 0.155, 1.285, 0.265); d.scale.set(0.95, 0.85, 1.05);
+      body.add(d);
+    }
     // arms: elbows bent and slightly out, hands on the hoods
     for (const sx of [-1, 1]) {
       const sh = V(sx * 0.165, 1.285, 0.27);
       const hand = V(sx * 0.2, 0.9, 0.585);
       const elbow = ik(sh, hand, 0.29, 0.29, sh.clone().add(V(sx * 0.5, -0.35, -0.15)));
       const hem = sh.clone().lerp(elbow, 0.55);
-      const upper = new THREE.Mesh(shapeGeo([[0, 0.062], [0.6, 0.056], [1, 0.05]], 0.16, 14), sleeveM);
+      const upper = new THREE.Mesh(shapeGeo([[0, 0.062], [0.6, 0.057], [1, 0.051]], 0.16, 18), sleeveM);
       place(upper, sh.clone().add(V(-sx * 0.02, 0.01, -0.01)), hem, V(0, 0, 1), 0.16); body.add(upper);
       const upperSkin = new THREE.Mesh(shapeGeo([[0, 0.046], [0.5, 0.044], [1, 0.038]], 0.13, 12), skin);
       place(upperSkin, hem, elbow, V(0, 0, 1), 0.13); body.add(upperSkin);
-      const fore = new THREE.Mesh(shapeGeo([[0, 0.038], [0.3, 0.044], [1, 0.029]], 0.27, 12), skin);
+      const fore = new THREE.Mesh(shapeGeo([[0, 0.039], [0.3, 0.046], [0.8, 0.034], [1, 0.03]], 0.27, 16), skin);
       place(fore, elbow, hand.clone().add(V(0, 0.015, -0.02)), V(0, 1, 0), 0.27); body.add(fore);
       const glove = new THREE.Mesh(G.hand, black); glove.position.copy(hand).add(V(0, 0.01, 0.01)); glove.scale.set(0.85, 0.8, 1.35); body.add(glove);
     }
@@ -302,10 +314,10 @@ export class RiderModel {
     const T = 0.45, S = 0.44;
     for (const sx of [-1, 1]) {
       const hip = V(sx * 0.088, 1.0, -0.17);
-      const thigh = new THREE.Mesh(shapeGeo([[0, 0.09], [0.35, 0.086], [0.75, 0.07], [1, 0.064]], 1, 16), shortsM);
+      const thigh = new THREE.Mesh(shapeGeo([[0, 0.092], [0.3, 0.09], [0.7, 0.074], [1, 0.064]], 1, 20), shortsM);
       const thighSkin = new THREE.Mesh(shapeGeo([[0, 0.06], [1, 0.054]], 1, 12), skin);
       const knee = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), skin);
-      const calf = new THREE.Mesh(shapeGeo([[0, 0.05], [0.25, 0.058], [0.55, 0.046], [1, 0.033]], 1, 14), skin);
+      const calf = new THREE.Mesh(shapeGeo([[0, 0.05], [0.25, 0.06], [0.5, 0.05], [1, 0.033]], 1, 18), skin);
       const sock = new THREE.Mesh(shapeGeo([[0, 0.048], [0.5, 0.042], [1, 0.037]], 1, 12), sockM);
       const shoe = new THREE.Mesh(shapeGeo([[0, 0.042], [0.35, 0.05], [0.8, 0.044], [1, 0.026]], 1, 14), shoeM);
       const sole = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.012, 0.26), black);
@@ -313,7 +325,6 @@ export class RiderModel {
       this.legs.push({ sx, hip, thigh, thighSkin, knee, calf, sock, shoe, sole, T, S });
     }
 
-    } // end fallback rider
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     if (label && labelSprite) { this.label = labelSprite; this.label.position.y = 2.0; this.group.add(this.label); }
     this.crank = Math.random() * Math.PI * 2;
@@ -332,7 +343,6 @@ export class RiderModel {
       crank.rotation.x = c; // arm points down (-Y) when c = 0, rotates forward
       pedal.position.set(sx * 0.115, 0.27 - Math.cos(c) * L, -Math.sin(c) * L);
     }
-    if (this.person) { this._posePerson(rpm); return; }
     for (const leg of this.legs) {
       const c = this.crank + (leg.sx > 0 ? Math.PI : 0);
       const x = leg.sx * 0.1;
@@ -361,110 +371,9 @@ export class RiderModel {
     this.body.rotation.z = rpm > 0 ? Math.sin(this.crank) * 0.012 : 0;
   }
 
-  _buildPerson(base, a, kit, headM, lensM, black) {
-    const { mats, own } = personMaterials(base, a, kit, std);
-    this._mats.push(...own);
-    const P = new Person(base, mats);
-    this.person = P;
-    const m = base.m;
-    // head gear in model units, attached to the head bone (computed in the bind pose)
-    P.root.updateMatrixWorld(true);
-    const hb = P.B.Head, box = m.headBox;
-    const size = new THREE.Vector3(); box.getSize(size);
-    const c = new THREE.Vector3(); box.getCenter(c);
-    const r = Math.max(size.x, size.z) * 0.56;
-    const gear = new THREE.Group();
-    gear.position.copy(hb.worldToLocal(new THREE.Vector3(c.x, box.max.y - r * 0.62, c.z)));
-    gear.quaternion.copy(hb.getWorldQuaternion(new THREE.Quaternion()).invert());
-    hb.add(gear);
-    if (a.headwear === 'cap') {
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 0.98, 22, 10, 0, Math.PI * 2, 0, Math.PI * 0.45), headM);
-      cap.scale.set(1, 0.9, 1.05); gear.add(cap);
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.62, r * 0.62, r * 0.06, 20, 1, false, -Math.PI / 2, Math.PI), kit ? kit.brim : headM);
-      brim.position.set(0, r * 0.38, r * 0.78); brim.rotation.x = -0.4; brim.scale.set(1, 1, 0.6); gear.add(brim);
-    } else {
-      const helmet = new THREE.Mesh(new THREE.SphereGeometry(r * 1.06, 26, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), headM);
-      helmet.scale.set(1, 0.92, 1.22); helmet.rotation.x = 0.1; gear.add(helmet);
-      const vents = std(0x111111, 0.6); this._mats.push(vents);
-      for (const vx of [-0.3, 0, 0.3]) {
-        const v = new THREE.Mesh(new THREE.BoxGeometry(r * 0.1, r * 0.05, r * 1.3), vents);
-        v.position.set(vx * r, r * 1.0 - Math.abs(vx) * r * 0.5, -r * 0.05); gear.add(v);
-      }
-    }
-    // wrap-around glasses at eye level
-    const eyeY = box.min.y + size.y * 0.5;
-    const lensG = new THREE.Mesh(new THREE.SphereGeometry(size.z * 0.5 + r * 0.05, 24, 3, Math.PI / 2 - 1.0, 2.0, Math.PI * 0.43, Math.PI * 0.12), lensM);
-    lensM.side = THREE.DoubleSide;
-    lensG.position.copy(hb.worldToLocal(new THREE.Vector3(c.x, eyeY, c.z)));
-    lensG.quaternion.copy(gear.quaternion);
-    lensG.scale.set(size.x / size.z, 1, 1);
-    hb.add(lensG);
-    hb.scale.setScalar(0.66); // the pack's heads, hands and feet are cartoon-sized
-    for (const s of ['L', 'R']) { P.B['Hand' + s].scale.setScalar(0.72); P.B['Foot' + s].scale.setScalar(0.8); }
-    this.footScale = 0.8;
-    this.pk = 0.9; // metres per model unit
-    P.root.scale.setScalar(this.pk);
-    this.root.add(P.root);
-    this.pelvisC = V(0, 1.03, -0.17);
-    this._lean = V(0, 0.5, 0.86).normalize();
-    this._lean2 = V(0, 0.62, 0.78).normalize();
-    this._headQ = new THREE.Quaternion();
-    this._v = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
-  }
-
-  _posePerson(rpm) {
-    const P = this.person, m = P.m, k = this.pk, root = this.root;
-    const [v0, v1, v2, v3, v4, v5] = this._v;
-    const W = (v) => root.localToWorld(v);
-    const Lc = (name, out) => root.worldToLocal(P.bonePos(name, out));
-    P.reset();
-    P.root.position.copy(this.pelvisC).addScaledVector(m.stomach, -k);
-    P.root.rotation.z = rpm > 0 ? Math.sin(this.crank) * 0.015 : 0;
-    P.root.updateMatrixWorld(true);
-    // spine: lean over the bars
-    Lc('Stomach', v0);
-    P.aim('Stomach', W(v1.copy(v0).addScaledVector(this._lean, m.chest.distanceTo(m.stomach) * k)));
-    P.B.Chest.updateWorldMatrix(true, false);
-    Lc('Chest', v0);
-    P.aim('Chest', W(v1.copy(v0).addScaledVector(this._lean2, m.headBone.distanceTo(m.chest) * k)));
-    // head looks up the road
-    root.getWorldQuaternion(this._headQ);
-    this._headQ.multiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), -0.25));
-    P.setWorldQuat('Head', this._headQ);
-    // arms: hands on the hoods
-    const U = m.upper * k, F = m.fore * k;
-    for (const s of ['L', 'R']) {
-      const sx = s === 'L' ? 1 : -1;
-      P.B['UpperArm' + s].updateWorldMatrix(true, false);
-      const sh = Lc('UpperArm' + s, v0);
-      const hand = v1.set(sx * 0.2, 0.9, 0.585);
-      const elbow = ik(sh, hand, U, F, v2.copy(sh).add(V(sx * 0.5, -0.35, -0.15)), v3);
-      P.aim('UpperArm' + s, W(v4.copy(elbow)));
-      P.aim('LowerArm' + s, W(v4.copy(hand)));
-      P.aim('Hand' + s, W(v4.copy(hand).add(V(0, -0.03, 0.09))));
-    }
-    // legs: IK to the pedals
-    const T = m.thigh * k, S = m.shin * k, L = 0.172;
-    const ankleUp = m.ankleToSole * k * this.footScale, ball = m.toeZ * k * 0.5 * this.footScale;
-    for (const s of ['L', 'R']) {
-      const sx = s === 'L' ? 1 : -1;
-      const c = this.crank + (sx > 0 ? Math.PI : 0);
-      const pedal = v0.set(sx * 0.1, 0.27 - Math.cos(c) * L, -Math.sin(c) * L);
-      const pitch = -0.18 + 0.16 * Math.sin(c + 0.6);
-      const fd = v1.set(0, Math.sin(pitch), Math.cos(pitch));
-      const ankle = v2.copy(pedal).addScaledVector(fd, -ball).add(V(0, ankleUp, 0));
-      P.B['UpperLeg' + s].updateWorldMatrix(true, false);
-      const hip = Lc('UpperLeg' + s, v3);
-      const knee = ik(hip, ankle, T, S, v4.copy(hip).add(V(sx * 0.05, 0.3, 1)), v5);
-      P.aim('UpperLeg' + s, W(knee.clone()));
-      P.aim('LowerLeg' + s, W(ankle.clone()));
-      P.aim('Foot' + s, W(v4.copy(pedal).addScaledVector(fd, ball * 1.1).add(V(0, 0.02, 0))));
-    }
-  }
-
   dispose() {
     this.group.traverse((o) => {
-      if (o.geometry && !o.isSkinnedMesh && !Object.values(G).includes(o.geometry)) o.geometry.dispose(); // skinned geometry is shared
+      if (o.geometry && !Object.values(G).includes(o.geometry)) o.geometry.dispose();
     });
     for (const m of this._mats) m.dispose();
     if (this.label) { this.label.material.map.dispose(); this.label.material.dispose(); }

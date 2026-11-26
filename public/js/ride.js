@@ -310,6 +310,41 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     location.href = '/';
   };
 
+  // ---------- Terrain source: own LiDAR terrain or Google Photorealistic 3D Tiles ----------
+  const tStore = { get() { try { return localStorage.getItem('gpxride.terrain'); } catch { return null; } }, set(v) { try { localStorage.setItem('gpxride.terrain', v); } catch { /* */ } } };
+  let terrainMode = config.googleKey && tStore.get() === 'google' ? 'google' : 'lidar';
+  const baseAttrib = $('attrib').textContent;
+  function applyTerrain() {
+    const g = world.setTerrainMode(terrainMode, config.googleKey);
+    $('terrainBtn').textContent = terrainMode === 'google' ? '🗺️ Teren: Google 3D' : '🗺️ Teren: Lidar';
+    $('terrainBtn').classList.toggle('on', terrainMode === 'google');
+    if (g && !g._hooked) {
+      g._hooked = true;
+      g.addEventListener('error', (e) => {
+        addChat({ system: true, text: `Google 3D Tiles: nie udało się wczytać (${e.detail}). Wracam do terenu z lidaru. Sprawdź klucz GOOGLE_MAPS_KEY, czy Map Tiles API jest włączone i czy w ograniczeniach klucza jest ten adres strony (np. http://localhost:3000/*). Szczegóły: F12 → Console.` });
+        if (!g.loaded) { terrainMode = 'lidar'; applyTerrain(); }
+      });
+      g.addEventListener('ready', () => addChat({ system: true, text: 'Google 3D Tiles połączone ✔' }));
+    }
+  }
+  $('terrainBtn').onclick = () => {
+    if (!config.googleKey) {
+      addChat({ system: true, text: 'Google 3D Tiles: serwer nie ma klucza. Ustaw zmienną GOOGLE_MAPS_KEY i uruchom serwer ponownie (lokalnie: $env:GOOGLE_MAPS_KEY="…" przed npm start).' });
+      return;
+    }
+    terrainMode = terrainMode === 'google' ? 'lidar' : 'google';
+    tStore.set(terrainMode);
+    applyTerrain();
+  };
+  if (!config.googleKey) $('terrainBtn').title = 'Brak klucza Google (GOOGLE_MAPS_KEY)';
+  applyTerrain();
+  setInterval(() => {
+    if (terrainMode === 'google' && world.google) {
+      const a = world.google.attributions();
+      $('attrib').textContent = 'Google' + (a ? ' · ' + a : '') + ' · ' + baseAttrib;
+    } else $('attrib').textContent = baseAttrib;
+  }, 2000);
+
   // ---------- Hyper focus (sprint) ----------
   const powerHist = []; // [t, W]
   function updateWarp(now) {

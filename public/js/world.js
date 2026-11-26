@@ -4,6 +4,7 @@ import { RiderModel } from './rider.js';
 import { Terrain } from './terrain.js';
 import { CameraRig } from './camera.js';
 import { WarpFX } from './warp.js';
+import { GoogleTerrain } from './google3d.js';
 
 // ---------- Route helpers ----------
 export class Track {
@@ -153,6 +154,7 @@ export class World {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (this.fx) this.fx.setSize(w, h);
+    if (this.google) this.google.resize();
   }
 
   _buildIndex() {
@@ -265,6 +267,25 @@ export class World {
 
   resetCamera() { this.rig.pos = null; }
 
+  /** 'lidar' (own terrain) or 'google' (Photorealistic 3D Tiles). Returns the GoogleTerrain or null. */
+  setTerrainMode(mode, key) {
+    this.terrainMode = mode;
+    if (mode === 'google' && key && !this.google) {
+      this.google = new GoogleTerrain({ key, scene: this.scene, camera: this.camera, renderer: this.renderer, track: this.track });
+    }
+    const g = mode === 'google' && !!this.google;
+    if (this.google) {
+      this.google.visible = g;
+      if (!this.google._worldHook) {
+        this.google._worldHook = true;
+        this.google.addEventListener('ready', () => { if (this.terrainMode === 'google') this.terrain.hidden = true; });
+      }
+    }
+    // keep our own ground until Google tiles have actually arrived
+    this.terrain.hidden = g && this.google.loaded;
+    return this.google;
+  }
+
   _laneOffset(id) {
     let h = 0;
     for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
@@ -329,6 +350,7 @@ export class World {
       m.group.visible = !this.rig.fpv;
       const warp = opts.warp || 0;
       this.rig.update(dt, p, dir, (x, z) => this.terrainHeight(x, z), warp);
+      if (this.google && this.terrainMode === 'google') this.google.update(p.x, p.z, me.dist);
       this.camPos = this.camera.position;
       const f = this.track.sample(me.dist + 35);
       this.fx.update(dt, warp, this._focus.set(f.x, f.y + 1.0, f.z));

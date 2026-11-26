@@ -48,6 +48,7 @@ function getRoute(id) {
 
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 })); // always revalidate: new versions show up after a refresh
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules/three'), { maxAge: '7d' }));
+app.use('/vendor/3d-tiles-renderer', express.static(path.join(__dirname, 'node_modules/3d-tiles-renderer/build'), { maxAge: '7d' }));
 
 app.get('/api/routes', (_req, res) => res.json(listRoutes()));
 app.get('/api/routes/:id', (req, res) => {
@@ -64,7 +65,9 @@ app.get('/api/config', (_req, res) => {
       credential: process.env.TURN_CREDENTIAL,
     });
   }
-  res.json({ iceServers, lidar: lidarEnabled() });
+  // Google Map Tiles API key: sent to the browser by design (Google requires client-side requests);
+  // protect it with website restrictions in Google Cloud Console.
+  res.json({ iceServers, lidar: lidarEnabled(), googleKey: process.env.GOOGLE_MAPS_KEY || null });
 });
 app.get('/tiles/:src/:z/:x/:y', tileHandler);
 app.get('/healthz', (_req, res) => res.send('ok'));
@@ -93,7 +96,6 @@ function cleanAppearance(a = {}) {
     hair: a.hair === 'ponytail' ? 'ponytail' : 'none',
     hairColor: col(a.hairColor, '#5b3a1e'),
     kit: a.kit === 'uect' ? 'uect' : '',
-    body: /^((normal|strong|fat)-(man|woman)-[abc]|classic)$/.test(a.body) ? a.body : 'normal-man-a',
   };
 }
 const KIT_COLORS = { uect: '#c8102e' };
