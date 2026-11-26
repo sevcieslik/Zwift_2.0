@@ -236,12 +236,14 @@ export class Terrain {
       const r = this.track.r;
       for (const i of this.cand) { const dd = (r.x[i] - x) ** 2 + (-r.y[i] - z) ** 2; if (dd < best) { best = dd; idx = i; } }
       if (idx < 0) [d, e, idx] = this.nearest(x, z);
-      else return Number.isFinite(dem) ? dem - this._off(idx) : this._blend2(x, z, 1e9, r.ele[idx] - this.base);
+      else if (Number.isFinite(dem)) return dem - this._off(idx);
+      else return this.sampler ? r.ele[idx] - this.base : this._blend2(x, z, 1e9, r.ele[idx] - this.base);
     }
-    if (!Number.isFinite(dem)) return this._blend2(x, z, d, e);
-    const road = e - 0.35;
+    if (!Number.isFinite(dem)) return this.sampler ? e - 0.4 : this._blend2(x, z, d, e);
+    const road = e - 0.4;
     dem -= this._off(idx);
-    return road + (dem - road) * smooth(10, 70, d);
+    // flat shoulder wider than half the road + one grid cell, so steep slopes never cover the road edge
+    return road + (dem - road) * smooth(17, 75, d);
   }
   _blend2(x, z, d, e) { // procedural hills when no elevation data
     const k = smooth(16, 120, d);

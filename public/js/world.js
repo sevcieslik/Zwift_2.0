@@ -299,7 +299,15 @@ export class World {
       const { s, m } = me;
       const p = m.group.position;
       this.terrain.update(p.x, p.z);
-      const dir = this._dir.set(s.dx, 0, s.dz).normalize();
+      // Camera heading from a long baseline, low-pass filtered: GPS wiggles must not swing the camera.
+      const a = this.track.sample(Math.max(0, me.dist - 15)), b = this.track.sample(Math.min(this.track.total, me.dist + 15));
+      let ang = Math.atan2(b.x - a.x, b.z - a.z);
+      if (!Number.isFinite(ang) || (b.x === a.x && b.z === a.z)) ang = Math.atan2(s.dx, s.dz);
+      if (this.camAng === undefined || this.rig.pos === null) this.camAng = ang;
+      let dA = ang - this.camAng;
+      dA = Math.atan2(Math.sin(dA), Math.cos(dA));
+      this.camAng += dA * (1 - Math.exp(-dt * 2.5));
+      const dir = this._dir.set(Math.sin(this.camAng), 0, Math.cos(this.camAng));
       m.group.visible = !this.rig.fpv;
       const warp = opts.warp || 0;
       this.rig.update(dt, p, dir, (x, z) => this.terrainHeight(x, z), warp);
