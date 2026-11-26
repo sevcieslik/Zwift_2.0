@@ -29,7 +29,7 @@ export class GoogleTerrain extends EventTarget {
     tiles.registerPlugin(new TileCompressionPlugin());
     this.reorient = new ReorientationPlugin({ lat: toRad(o.lat), lon: toRad(o.lon), height: track.baseEle + GEOID_UK, recenter: true });
     tiles.registerPlugin(this.reorient);
-    tiles.errorTarget = 12;
+    tiles.errorTarget = 6; // street level: ask for sharper tiles than the default (16)
     tiles.setCamera(camera);
     tiles.setResolutionFromRenderer(camera, renderer);
     this.tiles = tiles;
