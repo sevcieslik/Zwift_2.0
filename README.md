@@ -64,7 +64,7 @@ Zmienne środowiskowe (opcjonalne):
 
 ### Google Photorealistic 3D Tiles (opcjonalnie)
 
-Przycisk **🗺️ Teren** w grze przełącza między własnym terenem (lidar + zdjęcia satelitarne) a fotorealistycznym modelem 3D od Google. Do tego potrzebny jest klucz Google Map Tiles API:
+Przycisk **🗺️ Teren** w grze przełącza trzy tryby: **Lidar** (własny teren + zdjęcia satelitarne), **Lidar + Google** (własny teren i droga do ~200 m od kolarza, dalej fotorealistyczny model Google – zalecany) oraz **Google 3D** (tylko model Google; z poziomu drogi żywopłoty i drzewa wyglądają jak bryły). Do tego potrzebny jest klucz Google Map Tiles API:
 
 1. W Google Cloud Console utwórz projekt, dodaj konto rozliczeniowe i włącz **Map Tiles API**.
 2. Utwórz klucz API. W ograniczeniach ustaw: API → tylko Map Tiles API; Websites → `http://localhost:3000/*` oraz adres gry na Renderze, np. `https://twoja-gra.onrender.com/*`.
@@ -133,6 +133,7 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/camera.js` | Kamera: widoki, obrót myszą, zoom |
 | `public/js/warp.js` | Efekt hiper focus (post-processing, smugi, punkt skupienia) |
 | `lib/osm.js` | Dopasowanie trasy GPS do dróg z OpenStreetMap |
+| `public/js/clip.js` | Przenikanie terenu własnego (blisko) i Google (daleko) |
 | `public/js/google3d.js` | Google Photorealistic 3D Tiles (3DTilesRendererJS) w układzie gry |
 | `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |
 | `lib/lidar.js`, `lib/bng.js` | Kafle wysokości z lidaru (COG) i przeliczanie GPS → brytyjski układ współrzędnych |

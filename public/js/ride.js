@@ -200,7 +200,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
       world.rig.next();
     } else if (e.key === 'm' || e.key === 'M') {
       if (voice.active) voice.setMuted(!voice.muted);
-    } else if ((e.key === 'PageUp' || e.key === 'PageDown') && world.google && world.terrainMode === 'google') {
+    } else if ((e.key === 'PageUp' || e.key === 'PageDown') && world.google && world.terrainMode !== 'lidar') {
       const m = world.google.nudge(e.key === 'PageUp' ? 1 : -1);
       const g = world.google;
       addChat({ system: true, text: `Google 3D: ręczna korekta ${m > 0 ? '+' : ''}${m} m (auto ${g.yOffset.toFixed(1)} m, ostatni pomiar ${g.lastDiff != null ? g.lastDiff.toFixed(1) : '–'} m)` });
@@ -317,19 +317,20 @@ export async function startRide({ code, routeId, profile, start, onError }) {
 
   // ---------- Terrain source: own LiDAR terrain or Google Photorealistic 3D Tiles ----------
   const tStore = { get() { try { return localStorage.getItem('gpxride.terrain'); } catch { return null; } }, set(v) { try { localStorage.setItem('gpxride.terrain', v); } catch { /* */ } } };
-  let terrainMode = config.googleKey && tStore.get() === 'google' ? 'google' : 'lidar';
+  const TMODES = { lidar: '🗺️ Teren: Lidar', mix: '🗺️ Teren: Lidar + Google', google: '🗺️ Teren: Google 3D' };
+  let terrainMode = config.googleKey && (tStore.get() === 'google' || tStore.get() === 'mix') ? tStore.get() : 'lidar';
   const baseAttrib = $('attrib').textContent;
   function applyTerrain() {
     const g = world.setTerrainMode(terrainMode, config.googleKey);
-    $('terrainBtn').textContent = terrainMode === 'google' ? '🗺️ Teren: Google 3D' : '🗺️ Teren: Lidar';
-    $('terrainBtn').classList.toggle('on', terrainMode === 'google');
+    $('terrainBtn').textContent = TMODES[terrainMode];
+    $('terrainBtn').classList.toggle('on', terrainMode !== 'lidar');
     if (g && !g._hooked) {
       g._hooked = true;
       g.addEventListener('error', (e) => {
         addChat({ system: true, text: `Google 3D Tiles: nie udało się wczytać (${e.detail}). Wracam do terenu z lidaru. Sprawdź klucz GOOGLE_MAPS_KEY, czy Map Tiles API jest włączone i czy w ograniczeniach klucza jest ten adres strony (np. http://localhost:3000/*). Szczegóły: F12 → Console.` });
         if (!g.loaded) { terrainMode = 'lidar'; applyTerrain(); }
       });
-      g.addEventListener('ready', () => addChat({ system: true, text: 'Google 3D Tiles połączone ✔ (v3, bez cieniowania)' }));
+      g.addEventListener('ready', () => addChat({ system: true, text: 'Google 3D Tiles połączone ✔ (v4)' }));
     }
   }
   $('terrainBtn').onclick = () => {
@@ -337,14 +338,14 @@ export async function startRide({ code, routeId, profile, start, onError }) {
       addChat({ system: true, text: 'Google 3D Tiles: serwer nie ma klucza. Ustaw zmienną GOOGLE_MAPS_KEY i uruchom serwer ponownie (lokalnie: $env:GOOGLE_MAPS_KEY="…" przed npm start).' });
       return;
     }
-    terrainMode = terrainMode === 'google' ? 'lidar' : 'google';
+    terrainMode = terrainMode === 'lidar' ? 'mix' : terrainMode === 'mix' ? 'google' : 'lidar';
     tStore.set(terrainMode);
     applyTerrain();
   };
   if (!config.googleKey) $('terrainBtn').title = 'Brak klucza Google (GOOGLE_MAPS_KEY)';
   applyTerrain();
   setInterval(() => {
-    if (terrainMode === 'google' && world.google) {
+    if (terrainMode !== 'lidar' && world.google) {
       const a = world.google.attributions();
       $('attrib').textContent = 'Google' + (a ? ' · ' + a : '') + ' · ' + baseAttrib;
     } else $('attrib').textContent = baseAttrib;

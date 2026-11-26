@@ -5,6 +5,7 @@ import { Terrain } from './terrain.js';
 import { CameraRig } from './camera.js';
 import { WarpFX } from './warp.js';
 import { GoogleTerrain } from './google3d.js';
+import { CLIP } from './clip.js';
 
 // ---------- Route helpers ----------
 export class Track {
@@ -267,13 +268,14 @@ export class World {
 
   resetCamera() { this.rig.pos = null; }
 
-  /** 'lidar' (own terrain) or 'google' (Photorealistic 3D Tiles). Returns the GoogleTerrain or null. */
+  /** 'lidar' (own terrain), 'mix' (own terrain near + Google far) or 'google' (Photorealistic 3D Tiles only). */
   setTerrainMode(mode, key) {
     this.terrainMode = mode;
-    if (mode === 'google' && key && !this.google) {
+    const wantG = mode === 'google' || mode === 'mix';
+    if (wantG && key && !this.google) {
       this.google = new GoogleTerrain({ key, scene: this.scene, camera: this.camera, renderer: this.renderer, track: this.track });
     }
-    const g = mode === 'google' && !!this.google;
+    const g = wantG && !!this.google;
     if (this.google) {
       this.google.visible = g;
       if (!this.google._worldHook) {
@@ -281,8 +283,9 @@ export class World {
         this.google.addEventListener('ready', () => { if (this.terrainMode === 'google') this.terrain.hidden = true; });
       }
     }
+    CLIP.on.value = mode === 'mix' && g ? 1 : 0;
     // keep our own ground until Google tiles have actually arrived
-    this.terrain.hidden = g && this.google.loaded;
+    this.terrain.hidden = mode === 'google' && g && this.google.loaded;
     return this.google;
   }
 
@@ -350,7 +353,10 @@ export class World {
       m.group.visible = !this.rig.fpv;
       const warp = opts.warp || 0;
       this.rig.update(dt, p, dir, (x, z) => this.terrainHeight(x, z), warp);
-      if (this.google && this.terrainMode === 'google') this.google.update(p.x, p.z, me.dist);
+      if (this.google && (this.terrainMode === 'google' || this.terrainMode === 'mix')) {
+        CLIP.center.value.set(p.x, p.z);
+        this.google.update(p.x, p.z, me.dist);
+      }
       this.camPos = this.camera.position;
       const f = this.track.sample(me.dist + 35);
       this.fx.update(dt, warp, this._focus.set(f.x, f.y + 1.0, f.z));

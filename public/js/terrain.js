@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addClip } from './clip.js';
 
 // Real terrain from elevation tiles (Terrarium encoding) + satellite imagery, streamed around the rider.
 // Near patch: ~3 km, ~12 m grid, z13 elevation + z14 imagery, trees where the imagery shows forest.
@@ -67,7 +68,7 @@ function terrainMaterial(map, detail) {
         float det = mix(d1 * 0.55 + d2 * 0.45, d2, smoothstep(80.0, 600.0, camD));
         diffuseColor.rgb *= mix(1.0, 0.6 + det * 0.8, 0.8);`);
   };
-  return m;
+  return addClip(m, false);
 }
 
 export class Terrain {
@@ -349,9 +350,9 @@ export class Terrain {
     const trunkGeo = new THREE.CylinderGeometry(0.18, 0.28, 3, 5); trunkGeo.translate(0, 1.5, 0);
     const conGeo = new THREE.ConeGeometry(2.3, 8, 7); conGeo.translate(0, 6.5, 0);
     const decGeo = new THREE.IcosahedronGeometry(3, 1); decGeo.translate(0, 5.5, 0);
-    const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 1 }), N);
-    const conifers = new THREE.InstancedMesh(conGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), N);
-    const decid = new THREE.InstancedMesh(decGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }), N);
+    const trunks = new THREE.InstancedMesh(trunkGeo, addClip(new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 1 }), false), N);
+    const conifers = new THREE.InstancedMesh(conGeo, addClip(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), false), N);
+    const decid = new THREE.InstancedMesh(decGeo, addClip(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }), false), N);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3(), col = new THREE.Color();
     const up = new THREE.Vector3(0, 1, 0);
     let nt = 0, nc = 0, nd = 0;

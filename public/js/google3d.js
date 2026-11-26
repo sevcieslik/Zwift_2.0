@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
+import { addClip } from './clip.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 // Google Photorealistic 3D Tiles placed in the game's local coordinates (X east, Y up, Z south).
@@ -67,6 +68,7 @@ export class GoogleTerrain extends EventTarget {
         const m = new THREE.MeshBasicMaterial({ map: old.map || null, color: old.map ? 0xffffff : old.color, side: old.side });
         m.userData.gpxUnlit = true;
         m.toneMapped = false;
+        addClip(m, true);
         c.material = m;
         old.dispose();
       });
@@ -99,15 +101,16 @@ export class GoogleTerrain extends EventTarget {
       const d = Math.max(0, Math.min(tr.total - 2, dist + k * 25));
       const s = tr.sample(d), s2 = tr.sample(d + 2);
       let nx = -(s2.z - s.z), nz = s2.x - s.x; const L = Math.hypot(nx, nz) || 1; nx /= L; nz /= L;
-      let low = null;
+      const hits = [];
       for (const off of [-2.5, -1, 0, 1, 2.5]) {
         o.set(s.x + nx * off, s.y + 400, s.z + nz * off);
         this._ray.set(o, this._down);
         this._ray.far = 900;
         const hit = this._ray.intersectObject(this.tiles.group, true)[0];
-        if (hit && (low === null || hit.point.y < low)) low = hit.point.y;
+        if (hit) hits.push(hit.point.y);
       }
-      if (low !== null) diffs.push(s.y - low);
+      // median of the fan: one ray on a tree or into a ditch / the lake shore must not decide
+      if (hits.length >= 3) { hits.sort((a, b) => a - b); diffs.push(s.y - hits[hits.length >> 1]); }
     }
     if (diffs.length < 5) return;
     diffs.sort((a, b) => a - b);
