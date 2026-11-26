@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer';
-import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin, ReorientationPlugin, TileCompressionPlugin, TilesFadePlugin } from '3d-tiles-renderer/plugins';
+import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 // Google Photorealistic 3D Tiles placed in the game's local coordinates (X east, Y up, Z south).
@@ -27,7 +27,6 @@ export class GoogleTerrain extends EventTarget {
     const draco = new DRACOLoader().setDecoderPath('/vendor/three/examples/jsm/libs/draco/gltf/');
     tiles.registerPlugin(new GLTFExtensionsPlugin({ dracoLoader: draco }));
     tiles.registerPlugin(new TileCompressionPlugin());
-    tiles.registerPlugin(new TilesFadePlugin());
     this.reorient = new ReorientationPlugin({ lat: toRad(o.lat), lon: toRad(o.lon), height: track.baseEle + GEOID_UK, recenter: true });
     tiles.registerPlugin(this.reorient);
     tiles.errorTarget = 12;
@@ -59,18 +58,17 @@ export class GoogleTerrain extends EventTarget {
     });
     tiles.addEventListener('load-tile-set', () => { if (!this.loaded) { this.loaded = true; this.dispatchEvent(new Event('ready')); } });
     tiles.addEventListener('tiles-load-end', () => { if (!this.loaded) { this.loaded = true; this.dispatchEvent(new Event('ready')); } });
+    // Photogrammetry textures already contain the real sunlight. Lighting them again (flat-shaded, with our
+    // bluish sky light) gives the faceted blue look, so swap every material for an unlit one.
     tiles.addEventListener('load-model', ({ scene: model }) => {
       model.traverse((c) => {
-        const m = c.material;
-        if (!m) return;
-        for (const mm of Array.isArray(m) ? m : [m]) {
-          mm.toneMapped = false;
-          if (mm.isMeshStandardMaterial && mm.map) {
-            mm.emissiveMap = mm.map; mm.emissive.setRGB(1, 1, 1);
-            mm.color.setRGB(0, 0, 0); mm.metalness = 0; mm.roughness = 1; mm.envMapIntensity = 0;
-            mm.needsUpdate = true;
-          }
-        }
+        if (!c.isMesh || !c.material || c.material.userData.gpxUnlit) return;
+        const old = c.material;
+        const m = new THREE.MeshBasicMaterial({ map: old.map || null, color: old.map ? 0xffffff : old.color, side: old.side });
+        m.userData.gpxUnlit = true;
+        m.toneMapped = false;
+        c.material = m;
+        old.dispose();
       });
     });
     this._ray = new THREE.Raycaster();

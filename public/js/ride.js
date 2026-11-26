@@ -329,7 +329,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
         addChat({ system: true, text: `Google 3D Tiles: nie udało się wczytać (${e.detail}). Wracam do terenu z lidaru. Sprawdź klucz GOOGLE_MAPS_KEY, czy Map Tiles API jest włączone i czy w ograniczeniach klucza jest ten adres strony (np. http://localhost:3000/*). Szczegóły: F12 → Console.` });
         if (!g.loaded) { terrainMode = 'lidar'; applyTerrain(); }
       });
-      g.addEventListener('ready', () => addChat({ system: true, text: 'Google 3D Tiles połączone ✔' }));
+      g.addEventListener('ready', () => addChat({ system: true, text: 'Google 3D Tiles połączone ✔ (v3, bez cieniowania)' }));
     }
   }
   $('terrainBtn').onclick = () => {
@@ -566,4 +566,5 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   }
 
   addChat({ system: true, text: `Jesteś w przejeździe „${room.code}”. Trasa: ${route.name}. Kliknij ↪ przy kolarzu, aby do niego dołączyć.` });
+  addChat({ system: true, text: route.snap ? `Trasa dopasowana do dróg OSM: ${route.snap.coverage}% punktów, średnio ${route.snap.meanOffset} m korekty.` : 'Trasa NIE jest dopasowana do dróg OSM (sprawdź okno serwera).' });
 }
