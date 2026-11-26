@@ -195,3 +195,27 @@ details[open] summary { margin-bottom: 10px; }
 #ride.warp .panel:not(#stats), #ride.warp #attrib, #ride.warp #chat { opacity: .12; }
 #ride.warp #stats .stat:not(.big) { opacity: .35; }
 #ride.warp #stats .stat.big span { text-shadow: 0 0 14px currentColor; }
+
+/* ---------- loading screen ---------- */
+#loading { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 40%, rgba(30,45,38,.94), rgba(8,10,14,.98)); transition: opacity .6s; }
+#loading.fade { opacity: 0; pointer-events: none; }
+#loading.hidden { display: none; }
+.ld-box { width: min(420px, 88vw); text-align: center; color: #e8edf2; }
+.ld-title { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+.ld-sub { font-size: 14px; color: #9fb0bf; min-height: 18px; }
+.ld-steps { list-style: none; padding: 0; margin: 22px 0 16px; text-align: left; display: inline-block; }
+.ld-steps li { margin: 9px 0; font-size: 16px; color: #8a97a3; display: flex; align-items: center; gap: 10px; }
+.ld-steps li.active { color: #e8edf2; }
+.ld-steps li.done { color: #7fd99a; }
+.ld-steps li.hidden { display: none; }
+.ld-ic { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #3a4652; flex: none; }
+.ld-steps li.active .ld-ic { border-color: #ff7a1a; border-top-color: transparent; animation: ldspin .8s linear infinite; }
+.ld-steps li.done .ld-ic { border: none; background: #2faa5a; position: relative; }
+.ld-steps li.done .ld-ic::after { content: '✓'; color: #fff; font-size: 11px; position: absolute; left: 3px; top: 0; }
+@keyframes ldspin { to { transform: rotate(360deg); } }
+.ld-bar { height: 6px; border-radius: 3px; background: #26313b; overflow: hidden; margin: 6px 0 8px; }
+#ldBarIn { height: 100%; width: 0; background: linear-gradient(90deg, #ff7a1a, #ffb347); transition: width .4s; }
+#ldSkip { margin-top: 16px; padding: 10px 22px; border-radius: 10px; border: 1px solid #ff7a1a; background: transparent; color: #ffb347; font-size: 15px; cursor: pointer; }
+#ldSkip.hidden { display: none; }
+.ld-note { margin-top: 18px; font-size: 12px; color: #6d7a86; }

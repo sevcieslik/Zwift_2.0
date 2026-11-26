@@ -80,7 +80,58 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     if (speed !== null) physics.v = speed;
     recorder.newSegment();
     world.resetCamera();
+    // jumped somewhere the world isn't loaded yet: wait for it instead of riding in an empty place
+    const p = track.sample(state.dist);
+    if (world.terrainMode !== 'google' && !world.terrain.status(p.x, p.z).ground) startLoading(`km ${(state.dist / 1000).toFixed(1)}`);
   }
+  // ---------- Loading screen: don't start riding in an empty world ----------
+  const loading = { on: false, t0: 0 };
+  function startLoading(where) {
+    loading.on = true; loading.t0 = performance.now();
+    state.loading = true;
+    const el = $('loading');
+    el.classList.remove('hidden', 'fade');
+    $('ldWhere').textContent = where || '';
+    $('ldSkip').classList.add('hidden');
+    for (const id of ['ldGround', 'ldObjects', 'ldGoogle']) $(id).classList.remove('done', 'active');
+  }
+  function endLoading() {
+    if (!loading.on) return;
+    loading.on = false; state.loading = false;
+    const el = $('loading');
+    el.classList.add('fade');
+    setTimeout(() => { if (!loading.on) el.classList.add('hidden'); }, 650);
+  }
+  $('ldSkip').onclick = endLoading;
+  setInterval(() => {
+    if (!loading.on) return;
+    const s = track.sample(state.dist);
+    const mode = world.terrainMode || 'lidar';
+    const st = world.terrain.status(s.x, s.z);
+    const g = world.google, gWant = (mode === 'google' || mode === 'mix') && !!g;
+    let gDone = true;
+    if (gWant) {
+      const gs = (g.tiles && g.tiles.stats) || {};
+      gDone = g.errors > 0 || (g.loaded && (gs.downloading || 0) + (gs.parsing || 0) === 0 && (mode !== 'google' || g.calibrated));
+    }
+    const ground = mode === 'google' ? true : st.ground;
+    const objects = mode === 'google' ? true : st.objects;
+    const mark = (id, done, active) => { $(id).classList.toggle('done', done); $(id).classList.toggle('active', !done && active); };
+    $('ldGround').classList.toggle('hidden', mode === 'google');
+    $('ldObjects').classList.toggle('hidden', mode === 'google');
+    $('ldGoogle').classList.toggle('hidden', !gWant);
+    mark('ldGround', ground, true);
+    mark('ldObjects', objects, ground);
+    mark('ldGoogle', gDone, true);
+    const parts = [ground, objects, gDone];
+    const frac = parts.filter(Boolean).length / parts.length;
+    $('ldBarIn').style.width = Math.max(4, Math.round(frac * 100 - (st.pending ? 3 : 0))) + '%';
+    $('ldTiles').textContent = st.pending ? `pobieram dane: ${st.pending} w kolejce, ${st.loaded} gotowe` : (st.online ? '' : 'brak połączenia z serwerem map – teren zastępczy');
+    const el = performance.now() - loading.t0;
+    if (el > 12000) $('ldSkip').classList.remove('hidden');
+    if ((ground && objects && gDone && el > 600) || el > 180000) endLoading();
+  }, 250);
+
   const myAbs = () => state.lap * route.total + state.dist;
   function absOf(r) { return r.lap * route.total + r.dist + r.speed * Math.min(r.age || 0, 2000) / 1000; }
 
@@ -344,6 +395,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   };
   if (!config.googleKey) $('terrainBtn').title = 'Brak klucza Google (GOOGLE_MAPS_KEY)';
   applyTerrain();
+  if (!loading.on) startLoading(state.dist > 100 ? `km ${(state.dist / 1000).toFixed(1)}` : 'Start trasy');
   setInterval(() => {
     if (terrainMode !== 'lidar' && world.google) {
       const a = world.google.attributions();
@@ -462,7 +514,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
         if (gap > 0 && gap < gapAhead) gapAhead = gap;
       }
       state.draft = draftFactor(gapAhead);
-      if (!waiting && !state.finished && !state.paused) {
+      if (!waiting && !state.finished && !state.paused && !state.loading) {
         const moved = physics.step(state.power, track.gradeAt(state.dist), dt, state.draft);
         state.dist += moved;
         recorder.addDistance(moved);
@@ -471,7 +523,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
           else { state.dist = route.total; state.finished = true; state.finishTime = state.elapsed; physics.v = 0; }
         }
         if (physics.v > 0.1 || state.elapsed > 0) state.elapsed += dt;
-      } else if (waiting || state.paused) physics.v = 0;
+      } else if (waiting || state.paused || state.loading) physics.v = 0;
     }
   }
   setInterval(simulate, 100);

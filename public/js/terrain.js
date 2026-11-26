@@ -198,6 +198,10 @@ export class Terrain {
 
   // ---------- tiles ----------
   async _img(url) {
+    this.pending = (this.pending || 0) + 1;
+    try { return await this._img2(url); } finally { this.pending--; this.loaded = (this.loaded || 0) + 1; }
+  }
+  async _img2(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return createImageBitmap(await res.blob());
@@ -293,7 +297,11 @@ export class Terrain {
 
   /** Trees, hedges and walls from LiDAR, added to a near patch once their data arrives. */
   async _addObjects(group, cx, cz, heightFn, sat) {
+    try { await this._addObjectsInner(group, cx, cz, heightFn, sat); } finally { if (this.near === group) this.objectsFor = group; }
+  }
+  async _addObjectsInner(group, cx, cz, heightFn, sat) {
     const size = NEAR.size - 100;
+    this.objStage = 'trees';
     const objT = await this._objSampler(15, this._tileKeysForArea(cx, cz, size, 15));
     if (this.near !== group) return;
     if (!objT) { // no LiDAR surface model here (outside Wales): trees guessed from the imagery
@@ -321,6 +329,7 @@ export class Terrain {
     group.add(treeMeshes(trees, heightFn));
     this.treeCount = trees.length;
 
+    this.objStage = 'hedges';
     const objF = await this._objSampler(17, this._tileKeysForRoad(cx, cz, size, 17));
     if (this.near !== group || !objF) return;
     const h = size / 2;
@@ -563,6 +572,7 @@ export class Terrain {
     this._swap('near', group);
     if (this.far) this._lowerFar();
     if (this.lidar && this.online) this._addObjects(group, cx, cz, heightFn, sat).catch((e) => console.warn('LiDAR objects failed', e));
+    else this.objectsFor = group;
     return !!sampler;
   }
 
@@ -612,6 +622,11 @@ export class Terrain {
     geo.computeVertexNormals();
   }
 
+  /** Loading progress at a place: { ground, objects, pending, loaded } */
+  status(x, z) {
+    const ground = !!this.near && (this._covers(this.nearCenter, x, z, 250) || (!this.online && this._covers(this.shownCenter, x, z, 50)));
+    return { ground, objects: ground && this.objectsFor === this.near, stage: this.objStage, pending: this.pending || 0, loaded: this.loaded || 0, online: this.online };
+  }
   _covers(c, x, z, margin) {
     return c && Math.abs(x - c.x) < NEAR.size / 2 - margin && Math.abs(z - c.z) < NEAR.size / 2 - margin;
   }

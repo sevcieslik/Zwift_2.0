@@ -81,6 +81,21 @@
   <!-- ================= RIDE ================= -->
   <section id="ride" class="screen hidden">
     <canvas id="view"></canvas>
+    <div id="loading" class="hidden">
+      <div class="ld-box">
+        <div class="ld-title">Wczytuję okolicę…</div>
+        <div class="ld-sub" id="ldWhere"></div>
+        <ul class="ld-steps">
+          <li id="ldGround"><span class="ld-ic"></span>Teren z lidaru i zdjęcia</li>
+          <li id="ldObjects"><span class="ld-ic"></span>Drzewa, żywopłoty i murki</li>
+          <li id="ldGoogle" class="hidden"><span class="ld-ic"></span>Google 3D</li>
+        </ul>
+        <div class="ld-bar"><div id="ldBarIn"></div></div>
+        <div class="ld-sub" id="ldTiles"></div>
+        <button id="ldSkip" class="hidden">Jedź mimo to ▶</button>
+        <div class="ld-note">Pierwsze wczytanie miejsca trwa dłużej, potem jest w pamięci serwera.</div>
+      </div>
+    </div>
 
     <div id="stats" class="panel">
       <div class="stat big"><span id="sPower">0</span><small>W</small></div>
