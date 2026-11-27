@@ -16,7 +16,13 @@ function shapeGeo(prof, len, seg = 14) {
   for (let i = 0; i <= 4; i++) { const a = -Math.PI / 2 + (i / 4) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.max(1e-4, r0 * Math.cos(a)), r0 * Math.sin(a) * 0.7 * len / Math.max(len, r0 * 3))); }
   for (let i = 1; i < prof.length - 1; i++) pts.push(new THREE.Vector2(prof[i][1], prof[i][0] * len));
   for (let i = 0; i <= 4; i++) { const a = (i / 4) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.max(1e-4, r1 * Math.cos(a)), len + r1 * Math.sin(a) * 0.7 * len / Math.max(len, r1 * 3))); }
-  return new THREE.LatheGeometry(pts, seg);
+  const g = new THREE.LatheGeometry(pts, seg);
+  // v along the real length (Lathe spaces v by point index, which squeezed prints into the middle)
+  const p = g.attributes.position, uv = g.attributes.uv;
+  let y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < p.count; i++) { y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i)); }
+  for (let i = 0; i < p.count; i++) uv.setY(i, (p.getY(i) - y0) / (y1 - y0 || 1));
+  return g;
 }
 
 /** Torso: tapered (narrow waist, broad chest), uniform v along the length so the jersey print isn't distorted. */
@@ -319,7 +325,7 @@ export class RiderModel {
       const thighSkin = new THREE.Mesh(shapeGeo([[0, 0.06], [1, 0.054]], 1, 12), skin);
       const knee = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), skin);
       const calf = new THREE.Mesh(shapeGeo([[0, 0.05], [0.25, 0.06], [0.5, 0.05], [1, 0.033]], 1, 18), skin);
-      const sock = new THREE.Mesh(shapeGeo([[0, 0.048], [0.5, 0.042], [1, 0.037]], 1, 12), sockM);
+      const sock = new THREE.Mesh(shapeGeo([[0, 0.056], [0.5, 0.047], [1, 0.04]], 1, 12), sockM); // a bit wider than the calf: no flicker
       const shoe = new THREE.Mesh(shapeGeo([[0, 0.042], [0.35, 0.05], [0.8, 0.044], [1, 0.026]], 1, 14), shoeM);
       const sole = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.012, 0.26), kit ? kit.sole : black);
       body.add(thigh, thighSkin, knee, calf, sock, shoe, sole);

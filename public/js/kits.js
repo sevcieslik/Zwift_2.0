@@ -119,7 +119,7 @@ function textures() {
     g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, h * 0.06, w, 2);
   });
   // shorts: canvas top = leg hem. Black, red side panels widening towards the hem with "UECT", white gripper
-  const thigh = canvas(512, 256, (g, w, h) => {
+  const thigh = canvas(512, 340, (g, w, h) => { // ~ circumference : length of the shorts leg
     g.fillStyle = '#0b0b0b'; g.fillRect(0, 0, w, h);
     for (const cx of [w * 0.25, w * 0.75]) {
       g.fillStyle = RED;
@@ -128,7 +128,7 @@ function textures() {
       g.quadraticCurveTo(cx + w * 0.05, h * 0.6, cx + w * 0.01, h * 0.98);
       g.quadraticCurveTo(cx - w * 0.06, h * 0.5, cx - w * 0.11, 0);
       g.fill();
-      verticalText(g, 'UECT', cx - w * 0.02, h * 0.42, 40, '#fff');
+      verticalText(g, 'UECT', cx - w * 0.025, h * 0.36, 44, '#fff');
     }
     g.fillStyle = '#f4f4f4'; g.fillRect(0, 0, w, h * 0.09); // white leg gripper
     g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, h * 0.09, w, 2);
