@@ -333,10 +333,38 @@ export class RiderModel {
     this.animate(0, 0, 0);
   }
 
-  animate(dt, speed, cadence) {
+  /**
+   * pose: { wkg, grade } -> standing on steep climbs / sprints, aero tuck on fast descents.
+   * The whole upper body pivots around the hands on the hoods; legs keep following the pedals.
+   */
+  animate(dt, speed, cadence, pose = {}) {
     for (const w of this.wheels) w.rotation.x += (speed / 0.335) * dt;
-    const rpm = cadence > 0 ? cadence : speed > 0.5 ? 85 : 0;
-    this.crank += (rpm / 60) * Math.PI * 2 * dt;
+    const wkg = pose.wkg || 0, grade = pose.grade || 0;
+    const pedalling = cadence > 0 || wkg > 0.4;
+    const wantStand = pedalling && (wkg > 6 || (grade > 0.075 && wkg > 3.2) || (grade > 0.11 && wkg > 2.2)) ? 1 : 0;
+    const wantTuck = !wantStand && speed > 13 && wkg < 1.2 ? 1 : 0;
+    const k = 1 - Math.exp(-dt * 3);
+    this.stand = (this.stand || 0) + (wantStand - (this.stand || 0)) * k;
+    this.tuck = (this.tuck || 0) + (wantTuck - (this.tuck || 0)) * k;
+    const freewheel = !pedalling && speed > 0.5;
+    const rpm = cadence > 0 ? cadence : freewheel ? 0 : speed > 0.5 ? 85 : 0;
+    this.crank += (rpm / 60) * Math.PI * 2 * dt * (this.stand > 0.5 ? 0.85 : 1);
+    if (freewheel) this.crank += (Math.round(this.crank / Math.PI) * Math.PI + Math.PI / 2 - this.crank) * k * 0.5; // pedals level when coasting
+    // upper body: rotate around the hands (pivot) — standing lifts the hips up and forward
+    const st = this.stand, tu = this.tuck;
+    const P = this._pivot || (this._pivot = new THREE.Vector3(0, 0.9, 0.585));
+    const ang = st * 0.3 - tu * 0.1;
+    const b = this.body;
+    b.position.set(0, 0, 0); b.rotation.set(0, 0, 0);
+    b.position.sub(P).applyAxisAngle(V(1, 0, 0), -ang).add(P);
+    b.position.z += st * 0.06; b.position.y += st * 0.04 - tu * 0.05;
+    b.rotation.x = -ang;
+    // rocking the bike side to side out of the saddle
+    const rock = st * Math.sin(this.crank) * 0.13;
+    this.root.rotation.z = rock;
+    b.rotation.z = -rock * 0.6 + (rpm > 0 ? Math.sin(this.crank) * 0.012 : 0);
+    b.updateMatrix();
+    this._inv = (this._inv || new THREE.Matrix4()).copy(b.matrix).invert();
     const L = 0.172;
     for (const { crank, pedal, sx } of this.cranks) {
       const c = this.crank + (sx > 0 ? Math.PI : 0);
@@ -346,7 +374,7 @@ export class RiderModel {
     for (const leg of this.legs) {
       const c = this.crank + (leg.sx > 0 ? Math.PI : 0);
       const x = leg.sx * 0.1;
-      const pedal = this._tmp.set(x, 0.27 - Math.cos(c) * L, -Math.sin(c) * L);
+      const pedal = this._tmp.set(x, 0.27 - Math.cos(c) * L, -Math.sin(c) * L).applyMatrix4(this._inv); // into body space
       // foot pitch: toes slightly down, heel drops on the down stroke
       const pitch = -0.18 + 0.16 * Math.sin(c + 0.6);
       const fd = this._fd.set(0, Math.sin(pitch), Math.cos(pitch)); // heel -> toe
@@ -367,8 +395,6 @@ export class RiderModel {
       leg.sole.position.copy(heel).lerp(toe, 0.5).add(V(0, -0.028, 0));
       leg.sole.rotation.set(-pitch, 0, 0);
     }
-    // subtle upper-body rock with the pedal stroke
-    this.body.rotation.z = rpm > 0 ? Math.sin(this.crank) * 0.012 : 0;
   }
 
   dispose() {

@@ -66,6 +66,10 @@ Zmienne środowiskowe (opcjonalne):
 
 W Walii gra pobiera też model powierzchni (LiDAR DSM 1 m, ten sam serwer co DTM). Różnica DSM − DTM to wysokość tego, co stoi na ziemi. Z niej gra stawia drzewa w miejscach prawdziwych koron, z prawdziwą wysokością i szerokością, a wzdłuż drogi żywopłoty (≥ 1,35 m) i kamienne murki (niższe). Poza Walią drzewa są zgadywane ze zdjęć satelitarnych jak wcześniej. Pierwsze wczytanie okolicy trwa dłużej (serwer czyta dwa pliki lidaru), potem kafle są w cache.
 
+### Pogoda, pora dnia, wiatr i dźwięk
+
+Przycisk **🌤️ Pogoda** w grze: pora dnia (także czas rzeczywisty i szybki cykl dnia), pogoda (słonecznie, pochmurno, mgła, deszcz albo „Zmienna”) i wiatr. „Zmienna” pogoda i wiatr wynikają z zegara serwera i nazwy przejazdu, więc cała grupa ma to samo. Wiatr zmienia prędkość (opór powietrza) i opór trenażera (FTMS wind speed). Deszcz moczy drogę, a sucha robi się po kilku minutach. Dźwięki (wiatr, opony, wolnobieg, łańcuch, deszcz, ptaki) są generowane w przeglądarce, wyłącza je przycisk **🔊 Dźwięk**.
+
 ### Budynki
 
 Obrysy budynków pobierane są z OpenStreetMap (pas ~250 m wzdłuż trasy, plik `routes/<trasa>.buildings.json`, pobierany raz po drogach). Wysokość pochodzi z tagów OSM albo z lidaru. Prostokątne domy dostają dwuspadowy dach z łupka, a pozostałe płaski. Ściany są tynkowane albo kamienne, z oknami na każdym piętrze. Ten plik też warto dodać do repozytorium.
@@ -143,6 +147,8 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `lib/osm.js` | Dopasowanie trasy GPS do dróg z OpenStreetMap |
 | `public/js/objects.js` | Drzewa, żywopłoty i murki z lidaru (DSM − DTM) |
 | `public/js/buildings.js` | Budynki z OSM + wysokość z lidaru |
+| `public/js/atmosphere.js` | Pora dnia, niebo z chmurami, mgła, deszcz, wiatr |
+| `public/js/audio.js` | Dźwięki jazdy (Web Audio, bez plików) |
 | `public/js/clip.js` | Przenikanie terenu własnego (blisko) i Google (daleko) |
 | `public/js/google3d.js` | Google Photorealistic 3D Tiles (3DTilesRendererJS) w układzie gry |
 | `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |

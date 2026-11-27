@@ -1,4 +1,6 @@
 import { World } from './world.js';
+import { RideAudio } from './audio.js';
+import { TIMES, WEATHERS, WINDS } from './atmosphere.js';
 import { Physics, draftFactor } from './physics.js';
 import { Trainer, HeartRate, bluetoothAvailable } from './trainer.js';
 import { Voice } from './voice.js';
@@ -45,7 +47,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   $('roomCode').textContent = room.code;
   $('sDistTotal').textContent = '/ ' + (route.total / 1000).toFixed(1) + ' km';
 
-  const world = new World($('view'), route, { lidar: config.lidar });
+  const world = new World($('view'), route, { lidar: config.lidar, seed: code });
   const track = world.track;
   const profileHud = new Profile($('profile'), route);
   const minimap = new MiniMap($('minimap'), route);
@@ -64,6 +66,32 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   };
   let others = new Map();
   let clockOffset = room.now - Date.now();
+  world.atmo.clock = () => Date.now() + clockOffset; // shared weather in a group ride
+
+  // ---------- Sound ----------
+  const audio = new RideAudio();
+  audio.start();
+  const wakeAudio = () => audio.start();
+  document.addEventListener('pointerdown', wakeAudio);
+  document.addEventListener('keydown', wakeAudio);
+  const soundUi = () => { $('soundBtn').textContent = audio.enabled ? '🔊 Dźwięk' : '🔈 Dźwięk: wył.'; $('soundBtn').classList.toggle('on', audio.enabled); };
+  $('soundBtn').onclick = () => { audio.setEnabled(!audio.enabled); soundUi(); };
+  soundUi();
+
+  // ---------- Time of day, weather, wind ----------
+  const wStore = (() => { try { return JSON.parse(localStorage.getItem('gpxride.weather') || '{}'); } catch { return {}; } })();
+  Object.assign(world.atmo.settings, wStore);
+  const fill = (id, list, key) => {
+    $(id).innerHTML = list.map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
+    $(id).value = world.atmo.settings[key];
+    $(id).onchange = () => {
+      world.atmo.settings[key] = $(id).value;
+      try { localStorage.setItem('gpxride.weather', JSON.stringify(world.atmo.settings)); } catch {}
+    };
+  };
+  fill('wTime', TIMES, 'time'); fill('wWeather', WEATHERS, 'weather'); fill('wWind', WINDS, 'wind');
+  $('weatherBtn').onclick = () => { $('weatherPanel').classList.toggle('hidden'); $('weatherBtn').classList.toggle('on', !$('weatherPanel').classList.contains('hidden')); };
+  const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   window.gpxRide = { voice, trainer, physics, recorder, world, get state() { return state; } };
 
   // ---------- Positioning ----------
@@ -451,13 +479,18 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   $('tSprint').onclick = () => { state.sprintTestUntil = Date.now() + 8000; };
 
   // ---------- Timers ----------
-  let lastSentGrade = null, lastSentAt = 0;
+  let lastSentGrade = null, lastSentAt = 0, lastSentWind = 0;
   setInterval(() => {
     if (!trainer.canControl) return;
-    const g = waitingForEvent() || state.finished || state.paused ? 0 : track.gradeAt(state.dist) * state.difficulty;
+    const idle = waitingForEvent() || state.finished || state.paused || state.loading;
+    // look ~1 s ahead: the trainer's brake needs time to change, so the resistance arrives with the slope
+    const ahead = Math.max(3, physics.v * 1.0);
+    const g = idle ? 0 : track.gradeAt(state.dist + ahead) * state.difficulty;
+    const wind = idle ? 0 : (state.headwind || 0) * (1 - state.draft);
     const now = Date.now();
-    if (lastSentGrade === null || Math.abs(g - lastSentGrade) > 0.0015 || now - lastSentAt > 5000) {
-      trainer.setSimulation(g);
+    if (lastSentGrade === null || Math.abs(g - lastSentGrade) > 0.0015 || Math.abs(wind - (lastSentWind || 0)) > 0.4 || now - lastSentAt > 5000) {
+      lastSentWind = wind;
+      trainer.setSimulation(g, { wind });
       lastSentGrade = g; lastSentAt = now;
     }
   }, 1000);
@@ -495,6 +528,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     state.cadence = trainerLive ? trainer.cadence : 0;
     state.hr = hrm.connected ? hrm.hr : 0;
     updateWarp(now);
+    { const h = track.sample(state.dist); state.headwind = world.atmo.headwind(h.dx, h.dz); }
 
     const waiting = waitingForEvent();
     if (wasWaiting && !waiting && isParticipant()) state.elapsed = 0;
@@ -515,7 +549,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
       }
       state.draft = draftFactor(gapAhead);
       if (!waiting && !state.finished && !state.paused && !state.loading) {
-        const moved = physics.step(state.power, track.gradeAt(state.dist), dt, state.draft);
+        const moved = physics.step(state.power, track.gradeAt(state.dist), dt, state.draft, state.headwind || 0);
         state.dist += moved;
         recorder.addDistance(moved);
         if (state.dist >= route.total) {
@@ -539,14 +573,16 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     const waiting = waitingForEvent();
 
     const riders = [{ id: 'me', name: profile.name, appearance: profile.appearance, height: profile.height, color: colorOf(profile.appearance),
-      dist: state.dist, speed: physics.v, cadence: state.cadence || (waiting && state.power > 0 ? 80 : 0), me: true }];
+      dist: state.dist, speed: physics.v, cadence: state.cadence || (state.power > 20 ? 80 : 0), wkg: state.power / (profile.weight || 75), me: true }];
     for (const o of others.values()) {
       riders.push({ id: o.id, name: o.name, appearance: o.appearance, height: o.height, color: o.color,
-        dist: ((o.disp % route.total) + route.total) % route.total, speed: o.speed, cadence: o.cadence });
+        dist: ((o.disp % route.total) + route.total) % route.total, speed: o.speed, cadence: o.cadence, wkg: (o.power || 0) / (o.weight || 75) });
     }
     state.warp += ((state.warpOn ? 1 : 0) - state.warp) * (1 - Math.exp(-dt * (state.warpOn ? 2.5 : 1.4)));
     if (state.warp < 0.002) state.warp = 0;
-    world.render(dt, riders, { warp: state.warp });
+    world.render(dt, riders, { warp: state.warp, speed: physics.v });
+    if (world.env) audio.update({ speed: physics.v, airspeed: physics.v + (state.headwind || 0), power: state.power, cadence: state.cadence || (state.power > 20 ? 80 : 0),
+      rain: world.env.rain, wet: world.env.wet, day: world.env.day, windSpeed: world.atmo.state.windSpeed });
     $('ride').classList.toggle('warp', state.warp > 0.5);
 
     uiTimer += dt;
@@ -562,6 +598,16 @@ export async function startRide({ code, routeId, profile, start, onError }) {
       $('sTime').textContent = fmtTime(state.elapsed);
       $('sWkg').textContent = (state.power / profile.weight).toFixed(1);
       $('draft').classList.toggle('hidden', state.draft < 0.05);
+      { // wind relative to the rider: arrow shows where it blows to, on screen "up" = ahead
+        const ws = world.atmo.state, hdg = world.camAng || 0; // camAng: atan2(dx, dz)
+        const bearing = Math.atan2(Math.sin(hdg), -Math.cos(hdg)); // heading as compass bearing (north = -Z)
+        const rel = ws.windFrom + Math.PI - bearing;
+        const hw = state.headwind || 0;
+        const deg = Math.round(((ws.windFrom * 180 / Math.PI) % 360 + 360) % 360);
+        $('windChip').innerHTML = ws.windSpeed < 0.5 ? '💨 bezwietrznie' :
+          `💨 <span class="arrow" style="transform:rotate(${(rel * 180 / Math.PI).toFixed(0)}deg)">⬆</span> ${ws.windSpeed.toFixed(1)} m/s z ${COMPASS[Math.round(deg / 45) % 8]}` +
+          (Math.abs(hw) > 0.7 ? ` · <span class="${hw > 0 ? 'head' : 'tail'}">${hw > 0 ? 'pod wiatr' : 'z wiatrem'}</span>` : ' · z boku');
+      }
       updateEventUi();
       if (!pointerDown) renderRiderList(me);
       profileHud.draw(riders);

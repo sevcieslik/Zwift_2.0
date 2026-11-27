@@ -103,7 +103,7 @@ export async function findTrees(obj, cx, cz, size, { step = 3, max = 12000, near
       // flat roofs, lakes and smooth slopes have no crown shape
       if (!(v - lo > 1.2)) continue;
       const x = cx - h2 + i * step, z = cz - h2 + j * step;
-      if (nearRoad && nearRoad(x, z) < ROAD_HALF + 1.5) continue;
+      if (nearRoad && nearRoad(x, z) < 1.5) continue; // nearRoad = distance to the road edge
       if (isRoof && isRoof(x, z)) continue;
       // crown radius: how far the canopy stays above ~half the tree height
       let r = 1;
@@ -136,16 +136,17 @@ export async function buildBoundaries(track, obj, heightFn, inside, nearRoad) {
         let tx = r.x[i + 1] - r.x[i - 1], tz = -(r.y[i + 1] - r.y[i - 1]);
         const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
         const nx = -tz * side, nz = tx * side;
+        const hw = track.hw[i];
         let best = -1, bo = 0;
-        for (let o = 2.5; o <= 9; o += 0.5) {
+        for (let o = Math.max(1.2, hw - 1); o <= hw + 5.5; o += 0.5) {
           const v = obj(x + nx * o, z + nz * o);
           if (v > best) { best = v; bo = o; }
         }
-        const edge = obj(x + nx * 1.5, z + nz * 1.5);
+        const edge = obj(x + nx * Math.max(0.5, hw - 1.6), z + nz * Math.max(0.5, hw - 1.6));
         // a low, narrow ridge: higher than the verge, lower than a tree; the verge itself must be clear
         if (best > 0.6 && best < 4.2 && best - (Number.isFinite(edge) ? edge : 0) > 0.45) {
           const out = obj(x + nx * (bo + 2), z + nz * (bo + 2));
-          if (!(out > best - 0.3)) hit = { i, o: bo, h: best, nx, nz };
+          if (!(out > best - 0.3)) hit = { i, o: bo, h: best, nx, nz, hw };
         }
       }
       if (hit) {
@@ -165,7 +166,7 @@ export async function buildBoundaries(track, obj, heightFn, inside, nearRoad) {
     const type = hs[hs.length >> 1] < 1.35 ? 'wall' : 'hedge';
     const sm = (k, f) => { let s = 0, c = 0; for (let q = Math.max(0, k - 2); q <= Math.min(run.length - 1, k + 2); q++) { s += f(run[q]); c++; } return s / c; };
     const pts = run.map((p, k) => {
-      const o = Math.max(ROAD_HALF + (type === 'wall' ? 0.5 : 0.8), sm(k, (q) => q.o));
+      const o = Math.max(p.hw + 1.1 + (type === 'wall' ? 0.35 : 0.75), sm(k, (q) => q.o)); // behind the verge
       const h = type === 'wall' ? Math.min(1.6, Math.max(0.8, sm(k, (q) => q.h))) : Math.min(3.5, Math.max(1.2, sm(k, (q) => q.h)));
       const x = r.x[p.i] + p.nx * o, z = -r.y[p.i] + p.nz * o;
       return { x, z, y: heightFn(x, z), h, nx: p.nx, nz: p.nz };
@@ -174,7 +175,7 @@ export async function buildBoundaries(track, obj, heightFn, inside, nearRoad) {
     let seg = [];
     const flush = () => { if (seg.length >= 3) addStrip(builders[type], seg, type); seg = []; };
     for (const p of pts) {
-      if (!Number.isFinite(p.y) || (nearRoad && nearRoad(p.x, p.z) < ROAD_HALF + 0.4)) flush();
+      if (!Number.isFinite(p.y) || (nearRoad && nearRoad(p.x, p.z) < 0.9)) flush();
       else seg.push(p);
     }
     flush();
@@ -245,7 +246,7 @@ function addStrip(b, pts, type) {
 }
 
 // ---------- trees: leaf-card crowns (like most games), alpha-tested, with a light wind sway ----------
-export const WIND = { time: { value: 0 } };
+export const WIND = { time: { value: 0 }, k: { value: 1 } };
 
 let _leafCards = null, _firCards = null, _bark = null;
 function canvasTex(w, h, draw) {
@@ -379,17 +380,24 @@ function addWind(m, amp, base) {
   m.onBeforeCompile = (sh, r) => {
     if (prev) prev.call(m, sh, r);
     sh.uniforms.windT = WIND.time;
+    sh.uniforms.windK = WIND.k;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float windT;')
+      .replace('#include <common>', '#include <common>\nuniform float windT, windK;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         #ifdef USE_INSTANCING
           float wph = instanceMatrix[3].x * 0.13 + instanceMatrix[3].z * 0.17;
         #else
           float wph = 0.0;
         #endif
-        float wk = max(0.0, position.y - (${base.toFixed(2)}));
+        float wk = max(0.0, position.y - (${base.toFixed(2)})) * windK;
         transformed.x += (sin(windT * 1.3 + wph) * 0.6 + sin(windT * 3.1 + wph * 2.0) * 0.25) * ${amp.toFixed(3)} * wk;
-        transformed.z += sin(windT * 1.7 + wph * 1.3) * ${(amp * 0.6).toFixed(3)} * wk;`);
+        transformed.z += sin(windT * 1.7 + wph * 1.3) * ${(amp * 0.6).toFixed(3)} * wk;`)
+      .replace('#include <project_vertex>', '#include <project_vertex>\n  vCamD = -mvPosition.z;')
+      .replace('#include <common>', '#include <common>\nvarying float vCamD;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vCamD;')
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        if (vCamD < 4.0 && fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453) > (vCamD - 1.5) / 2.5) discard;`);
   };
   return m;
 }
@@ -442,4 +450,91 @@ export function treeMeshes(trees, heightFn, { addClip: clip = true } = {}) {
   for (const o of [firs, ...decs]) { o.castShadow = true; o.receiveShadow = true; }
   trunks.castShadow = true;
   return g;
+}
+
+// ---------- far forests: cheap crossed billboards, from coarse LiDAR canopy heights ----------
+let _farTex = null;
+function farTreeTextures() {
+  if (_farTex) return _farTex;
+  const mk = (draw) => {
+    const t = canvasTex(128, 256, draw);
+    t.anisotropy = 2;
+    return t;
+  };
+  const broad = mk((g, W, H) => {
+    g.fillStyle = '#3b2e22'; g.fillRect(W / 2 - 4, H * 0.55, 8, H * 0.45);
+    for (let i = 0; i < 700; i++) {
+      const a = Math.random() * 6.283, r = Math.pow(Math.random(), 0.55);
+      const x = W / 2 + Math.cos(a) * r * W * 0.46, y = H * 0.36 + Math.sin(a) * r * H * 0.3;
+      const sh = 1 - (y / H) * 0.9;
+      g.fillStyle = `hsl(${80 + Math.random() * 30},${35 + Math.random() * 20}%,${12 + Math.random() * 14 + sh * 14}%)`;
+      g.beginPath(); g.arc(x, y, 3 + Math.random() * 5, 0, 6.283); g.fill();
+    }
+  });
+  const conifer = mk((g, W, H) => {
+    g.fillStyle = '#33281e'; g.fillRect(W / 2 - 3, H * 0.8, 6, H * 0.2);
+    for (let i = 0; i < 900; i++) {
+      const y = H * 0.03 + Math.random() * H * 0.82, half = (y / H) * W * 0.48;
+      const x = W / 2 + (Math.random() * 2 - 1) * half;
+      g.fillStyle = `hsl(${125 + Math.random() * 25},${25 + Math.random() * 20}%,${9 + Math.random() * 13}%)`;
+      g.fillRect(x - 2, y, 4, 3);
+    }
+  });
+  _farTex = { broad, conifer };
+  return _farTex;
+}
+function crossGeometry() {
+  const a = new THREE.PlaneGeometry(1, 1); a.translate(0, 0.5, 0);
+  const b = a.clone(); b.rotateY(Math.PI / 2);
+  const g = new THREE.BufferGeometry();
+  const pos = [...a.attributes.position.array, ...b.attributes.position.array];
+  const uv = [...a.attributes.uv.array, ...b.attributes.uv.array];
+  const nor = []; for (let i = 0; i < pos.length; i += 3) nor.push(0, 1, 0); // lit like a canopy from above
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setIndex([0, 2, 1, 2, 3, 1, 4, 6, 5, 6, 7, 5]);
+  return g;
+}
+/** Sample forest positions from a coarse canopy-height sampler. Returns [{x, z, h, conifer, seed}]. */
+export function farForest(obj, cx, cz, size, { step = 30, max = 40000 } = {}) {
+  const n = Math.floor(size / step), h2 = size / 2, out = [];
+  const G = obj.grid ? obj.grid(cx - h2, cz - h2, step, n, n) : null;
+  for (let j = 0; j < n && out.length < max; j++) for (let i = 0; i < n; i++) {
+    const v = G ? G[j * n + i] : obj(cx - h2 + i * step, cz - h2 + j * step);
+    if (!(v > 2.5) || v > 45) continue;
+    const r1 = Math.abs(Math.sin((i * 12.9898 + j * 78.233)) * 43758.5453) % 1;
+    const r2 = Math.abs(Math.sin((i * 39.346 + j * 11.135)) * 24634.6345) % 1;
+    if (r1 > Math.min(1, (v - 2) / 6)) continue; // sparse where the canopy is low (scattered trees)
+    out.push({ x: cx - h2 + (i + r1) * step, z: cz - h2 + (j + r2) * step, h: Math.min(28, Math.max(6, v * 1.25)), conifer: v > 13 && r2 < 0.6, seed: r2 });
+  }
+  return out;
+}
+export function farForestMeshes(N) {
+  const T = farTreeTextures(), geo = crossGeometry();
+  const mk = (tex) => {
+    const m = addClip(new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, metalness: 0 }), false);
+    const im = new THREE.InstancedMesh(geo, m, Math.max(1, N));
+    im.userData.keepMap = true; im.count = 0; im.frustumCulled = false;
+    return im;
+  };
+  return { broad: mk(T.broad), conifer: mk(T.conifer) };
+}
+export function placeFarForest(meshes, trees, heightFn, skip) {
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3(), col = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+  let nb = 0, nc = 0;
+  for (const t of trees) {
+    if (skip(t.x, t.z)) continue;
+    const y = heightFn(t.x, t.z);
+    if (!Number.isFinite(y)) continue;
+    const w = t.conifer ? t.h * 0.45 : t.h * 0.75;
+    q.setFromAxisAngle(up, t.seed * 6.28);
+    m.compose(v.set(t.x, y - 0.5, t.z), q, s.set(w, t.h, w));
+    col.setRGB(0.85 + t.seed * 0.3, 0.9 + t.seed * 0.2, 0.8 + t.seed * 0.15);
+    if (t.conifer) { meshes.conifer.setMatrixAt(nc, m); meshes.conifer.setColorAt(nc++, col); }
+    else { meshes.broad.setMatrixAt(nb, m); meshes.broad.setColorAt(nb++, col); }
+  }
+  meshes.broad.count = nb; meshes.conifer.count = nc;
+  for (const im of [meshes.broad, meshes.conifer]) { im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
+  return nb + nc;
 }

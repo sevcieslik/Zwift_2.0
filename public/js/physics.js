@@ -18,14 +18,16 @@ export class Physics {
    * @param {number} grade e.g. 0.05 = 5%
    * @param {number} dt seconds
    * @param {number} draft 0..1 — fraction of air drag saved by drafting
+   * @param {number} headwind m/s along the direction of travel (negative = tailwind)
    * @returns distance travelled (m)
    */
-  step(power, grade, dt, draft = 0) {
+  step(power, grade, dt, draft = 0, headwind = 0) {
     const m = this.mass;
     const theta = Math.atan(grade);
     const v = this.v;
     const fDrive = power / Math.max(v, 1.0); // cap force at very low speed
-    const fAir = 0.5 * RHO * this.cda * (1 - draft) * v * v;
+    const va = v + headwind; // air speed
+    const fAir = 0.5 * RHO * this.cda * (1 - draft) * va * Math.abs(va);
     const fRoll = this.crr * m * G * Math.cos(theta);
     const fGrav = m * G * Math.sin(theta);
     const fBrake = power < 1 && v < 0.3 ? v * m / Math.max(dt, 0.01) : 0;

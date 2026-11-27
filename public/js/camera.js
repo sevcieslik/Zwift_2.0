@@ -59,7 +59,7 @@ export class CameraRig extends EventTarget {
   /**
    * p: rider position, dir: unit heading (XZ), heightAt(x,z): terrain height, warp: 0..1
    */
-  update(dt, p, dir, heightAt, warp = 0) {
+  update(dt, p, dir, heightAt, warp = 0, motion = {}) {
     const v = VIEWS[this.view];
     const cam = this.camera;
     let fov = v.fov;
@@ -94,6 +94,20 @@ export class CameraRig extends EventTarget {
     }
     cam.position.copy(this.pos);
     cam.lookAt(this.look);
+    // feel of speed: lean into corners and a fine road buzz / shake on fast descents
+    const { speed = 0, turn = 0, rough = 0 } = motion;
+    const close = v.fpv || this.view <= 1 ? 1 : this.view <= 3 ? 0.4 : 0;
+    const roll = Math.max(-0.12, Math.min(0.12, -turn * speed * 0.03)) * close;
+    this.roll = (this.roll || 0) + (roll - (this.roll || 0)) * (1 - Math.exp(-dt * 2.5));
+    this.t = (this.t || 0) + dt;
+    const sh = close * (Math.max(0, speed - 9) * 0.0016 + rough * 0.004) * (1 - warp * 0.5);
+    if (sh > 0) {
+      const t = this.t;
+      cam.position.y += (Math.sin(t * 37) * 0.6 + Math.sin(t * 61 + 1) * 0.4) * sh * 6;
+      cam.rotateX((Math.sin(t * 43 + 2) * 0.5 + Math.sin(t * 71) * 0.5) * sh);
+      cam.rotateY(Math.sin(t * 29 + 4) * sh * 0.5);
+    }
+    cam.rotateZ(this.roll + (v.fpv ? Math.sin(this.t * 1.7) * 0.004 * Math.min(1, speed / 5) : 0));
     if (Math.abs(cam.fov - fov) > 0.05) { cam.fov = fov; cam.updateProjectionMatrix(); }
   }
 }

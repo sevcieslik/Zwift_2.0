@@ -7,6 +7,7 @@ import { WarpFX } from './warp.js';
 import { GoogleTerrain } from './google3d.js';
 import { CLIP } from './clip.js';
 import { WIND } from './objects.js';
+import { Atmosphere } from './atmosphere.js';
 
 // ---------- Route helpers ----------
 export class Track {
@@ -19,7 +20,10 @@ export class Track {
     this.baseEle = route.minEle - 5;
     // Visual road height (world Y). Starts from GPX elevation; replaced by LiDAR heights when available.
     this.vis = Float32Array.from(route.ele, (e) => e - this.baseEle);
+    // half width of the carriageway per point (from the OSM road class when the route is snapped)
+    this.hw = Float32Array.from(route.hw || route.x, (v) => (route.hw ? v : 2.9));
   }
+  halfWidthAt(d) { const [i, t] = this._idx(d); return this.hw[i] + t * (this.hw[i + 1] - this.hw[i]); }
   _idx(d) {
     d = Math.max(0, Math.min(this.total, d));
     let i = Math.min(this.n - 2, Math.floor(d / this.step));
@@ -46,22 +50,60 @@ export class Track {
 
 // ---------- Textures ----------
 function roadTexture() {
+  // across = u (0 left edge .. 1 right edge), along = v (12 m per repeat)
   const c = document.createElement('canvas');
-  c.width = 128; c.height = 512;
+  c.width = 256; c.height = 1024;
   const g = c.getContext('2d');
-  g.fillStyle = '#3a3c40'; g.fillRect(0, 0, 128, 512);
-  for (let i = 0; i < 4000; i++) {
-    const v = 40 + Math.random() * 40;
-    g.fillStyle = `rgb(${v},${v},${v + 3})`;
-    g.fillRect(Math.random() * 128, Math.random() * 512, 1.5, 1.5);
+  g.fillStyle = '#404246'; g.fillRect(0, 0, 256, 1024);
+  // worn wheel tracks are smoother/darker, the middle and edges lighter and dustier
+  const grad = g.createLinearGradient(0, 0, 256, 0);
+  for (const [t, a] of [[0, 0.1], [0.08, 0.06], [0.25, -0.05], [0.38, 0.02], [0.5, 0.06], [0.62, 0.02], [0.75, -0.05], [0.92, 0.06], [1, 0.1]]) grad.addColorStop(t, a > 0 ? `rgba(160,155,145,${a})` : `rgba(0,0,0,${-a})`);
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 1024);
+  for (let i = 0; i < 26000; i++) { // aggregate
+    const v = 35 + Math.random() * 60;
+    g.fillStyle = `rgba(${v},${v},${v + 4},${0.35 + Math.random() * 0.5})`;
+    const r = Math.random() < 0.9 ? 1 : 2;
+    g.fillRect(Math.random() * 256, Math.random() * 1024, r, r);
   }
-  g.fillStyle = '#e8e8e8';
-  g.fillRect(6, 0, 4, 512); g.fillRect(118, 0, 4, 512);
-  g.fillStyle = '#f0f0f0';
-  g.fillRect(62, 0, 4, 220);
+  for (let i = 0; i < 3; i++) { // a couple of old repairs: straight-edged, only slightly darker
+    g.fillStyle = `rgba(25,25,28,${0.08 + Math.random() * 0.08})`;
+    const x = 20 + Math.random() * 180, y = Math.random() * 900, w = 25 + Math.random() * 60, h = 40 + Math.random() * 100;
+    g.fillRect(x, y, w, h);
+  }
+  g.strokeStyle = 'rgba(15,15,15,0.5)'; g.lineWidth = 1.2; // cracks
+  for (let i = 0; i < 14; i++) { let x = Math.random() * 256, y = Math.random() * 1024; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (Math.random() - 0.5) * 18; y += Math.random() * 14; g.lineTo(x, y); } g.stroke(); }
+  // white edge lines (slightly worn) and dashed centre line
+  const worn = (x, y, w, h) => { g.fillStyle = '#e6e6e2'; g.fillRect(x, y, w, h); g.fillStyle = 'rgba(64,66,70,0.35)'; for (let k = 0; k < h / 3; k++) g.fillRect(x + Math.random() * w, y + Math.random() * h, 2, 2); };
+  worn(10, 0, 6, 1024); worn(240, 0, 6, 1024);
+  worn(125, 0, 6, 440);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8; t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 16; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function roadBumpTexture() {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#808080'; g.fillRect(0, 0, 128, 512);
+  for (let i = 0; i < 9000; i++) { const v = 90 + Math.random() * 120; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(Math.random() * 128, Math.random() * 512, 1, 1); }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function vergeTexture() {
+  // u: 0 = road edge (crumbled tarmac, grit) .. 1 = grass
+  const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 64, 0);
+  grad.addColorStop(0, '#3e3d39'); grad.addColorStop(0.25, '#5a5546'); grad.addColorStop(0.55, '#5d6a3a'); grad.addColorStop(1, '#4f6b2c');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 2600; i++) {
+    const x = Math.random() * 64, y = Math.random() * 256, k = x / 64;
+    g.fillStyle = k < 0.35 ? `rgba(${70 + Math.random() * 60},${68 + Math.random() * 50},${60 + Math.random() * 40},0.7)` : `hsla(${75 + Math.random() * 35},${35 + Math.random() * 25}%,${18 + Math.random() * 22}%,0.85)`;
+    g.fillRect(x, y, k < 0.35 ? 1.5 : 1, k < 0.35 ? 1.5 : 3 + Math.random() * 3);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   return t;
 }
 // ---------- Rider model ----------
@@ -98,22 +140,13 @@ export class World {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.scene = new THREE.Scene();
-    const horizon = new THREE.Color(0xc9dcec);
-    this.scene.background = horizon;
-    this.scene.fog = new THREE.Fog(horizon, 500, 26000);
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.25, 60000);
-
-    this.sunDir = new THREE.Vector3(0.45, 0.62, 0.35).normalize();
-    this.scene.add(this._sky(horizon));
-    this.scene.add(new THREE.HemisphereLight(0xd8e8ff, 0x4f5a3a, 1.5));
-    this.sun = new THREE.DirectionalLight(0xfff0d8, 3.2);
-    this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.bias = -0.0005;
-    Object.assign(this.sun.shadow.camera, { left: -35, right: 35, top: 35, bottom: -35, near: 1, far: 300 });
-    this.scene.add(this.sun, this.sun.target);
+    this.atmo = new Atmosphere(this.scene, { seed: opts.seed || route.id || 'gpx' });
+    this.sunDir = this.atmo.sunDir;
+    this.sun = this.atmo.sun;
 
     this._buildIndex();
+    this.roadWet = { value: 0 };
     this._buildRoad();
     this.terrain = new Terrain(this.scene, this.track, (x, z, lim) => this.nearest(x, z, lim), { lidar: opts.lidar, onRoad: (a, b) => this.updateRoad(a, b) });
     this.riders = new Map();
@@ -124,29 +157,6 @@ export class World {
     this._dir = new THREE.Vector3(); this._focus = new THREE.Vector3();
     this.resize();
     window.addEventListener('resize', () => this.resize());
-  }
-
-  _sky(horizon) {
-    const mat = new THREE.ShaderMaterial({
-      side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
-      uniforms: { top: { value: new THREE.Color(0x2f6fc0) }, horizon: { value: horizon }, sunDir: { value: this.sunDir } },
-      vertexShader: `varying vec3 vDir;
-        void main() { vDir = position; vec4 p = projectionMatrix * vec4(mat3(viewMatrix) * position, 1.0); gl_Position = p.xyww; }`,
-      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;
-        void main() {
-          vec3 d = normalize(vDir);
-          float h = max(d.y, 0.0);
-          vec3 c = mix(horizon, top, pow(h, 0.45));
-          float s = max(dot(d, sunDir), 0.0);
-          c += vec3(1.0, 0.95, 0.85) * (pow(s, 600.0) * 3.0 + pow(s, 12.0) * 0.12);
-          gl_FragColor = vec4(c, 1.0);
-          #include <colorspace_fragment>
-        }`,
-    });
-    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), mat);
-    m.frustumCulled = false;
-    m.renderOrder = -1000;
-    return m;
   }
 
   resize() {
@@ -208,46 +218,91 @@ export class World {
   /** Refresh road vertex heights after the visual elevation changed. */
   updateRoad(i0, i1) {
     const p = this.roadGeo.attributes.position;
+    const vp = this.vergeGeo.attributes.position;
     for (let i = Math.max(0, i0); i <= Math.min(this.track.n - 1, i1); i++) {
       const y = this._roadY(i);
       p.setY(i * 2, y); p.setY(i * 2 + 1, y);
+      vp.setY(i * 4, y - 0.18); vp.setY(i * 4 + 1, y - 0.03); vp.setY(i * 4 + 2, y - 0.03); vp.setY(i * 4 + 3, y - 0.18);
     }
-    p.needsUpdate = true;
+    p.needsUpdate = true; vp.needsUpdate = true;
+    this.vergeGeo.computeVertexNormals(); this.vergeGeo.computeBoundingSphere();
     this.roadGeo.computeVertexNormals();
     this.roadGeo.computeBoundingSphere();
   }
 
   _buildRoad() {
-    const r = this.track.r, n = r.x.length, W = 3.6;
-    const pos = new Float32Array(n * 2 * 3), uv = new Float32Array(n * 2 * 2);
+    const r = this.track.r, n = r.x.length, hw = this.track.hw, VERGE = 1.1;
+    const pos = new Float32Array(n * 2 * 3), uv = new Float32Array(n * 2 * 2), lane = new Float32Array(n * 2);
+    const vpos = new Float32Array(n * 4 * 3), vuv = new Float32Array(n * 4 * 2);
+    this._roadN = [];
     for (let i = 0; i < n; i++) {
       const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
       let tx = r.x[b] - r.x[a], tz = -(r.y[b] - r.y[a]);
       const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
-      const nx = -tz, nz = tx;
+      const nx = -tz, nz = tx, W = hw[i];
+      this._roadN.push([nx, nz]);
       const x = r.x[i], z = -r.y[i], y = this._roadY(i);
       pos.set([x + nx * W, y, z + nz * W, x - nx * W, y, z - nz * W], i * 6);
       const v = r.dist[i] / 12;
       uv.set([0, v, 1, v], i * 4);
+      lane[i * 2] = lane[i * 2 + 1] = W >= 2.4 ? 1 : 0; // single-track lanes: no centre line
+      // verges: [outer L, inner L, inner R, outer R]
+      const vy = y - 0.03, ov = y - 0.18;
+      vpos.set([x + nx * (W + VERGE), ov, z + nz * (W + VERGE), x + nx * W, vy, z + nz * W,
+        x - nx * W, vy, z - nz * W, x - nx * (W + VERGE), ov, z - nz * (W + VERGE)], i * 12);
+      const vv = r.dist[i] / 4;
+      vuv.set([1, vv, 0, vv, 0, vv, 1, vv], i * 8);
     }
-    const idx = [];
+    const idx = [], vidx = [];
     for (let i = 0; i < n - 1; i++) {
       const p = i * 2;
       idx.push(p, p + 2, p + 1, p + 1, p + 2, p + 3);
+      const q = i * 4;
+      vidx.push(q, q + 4, q + 1, q + 1, q + 4, q + 5, q + 2, q + 6, q + 3, q + 3, q + 6, q + 7);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute('lane', new THREE.BufferAttribute(lane, 1));
     geo.setIndex(idx);
     geo.computeVertexNormals();
     this.roadGeo = geo;
     const mat = new THREE.MeshStandardMaterial({
-      map: roadTexture(), roughness: 0.9, side: THREE.DoubleSide,
+      map: roadTexture(), bumpMap: roadBumpTexture(), bumpScale: 0.6, roughness: 0.88, metalness: 0, side: THREE.DoubleSide,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.wet = this.roadWet;
+      sh.uniforms.skyCol = { value: this.atmo.horizon };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float lane;\nvarying float vLane;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvLane = lane;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLane;\nuniform float wet;\nuniform vec3 skyCol;')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          // wet tarmac mirrors the sky at grazing angles
+          float fres = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 5.0);
+          totalEmissiveRadiance += skyCol * fres * wet * 0.55;`)
+        .replace('#include <map_fragment>', `
+          vec2 ruv = vMapUv;
+          if (vLane < 0.5 && abs(ruv.x - 0.5) < 0.03) ruv.x += 0.17;
+          diffuseColor *= texture2D(map, ruv);
+          diffuseColor.rgb *= 1.0 - wet * 0.45;`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          roughnessFactor = mix(roughnessFactor, 0.22, wet);`);
+    };
+    this.roadMat = mat;
     const road = new THREE.Mesh(geo, mat);
     road.receiveShadow = true;
     this.scene.add(road);
+
+    const vgeo = new THREE.BufferGeometry();
+    vgeo.setAttribute('position', new THREE.BufferAttribute(vpos, 3));
+    vgeo.setAttribute('uv', new THREE.BufferAttribute(vuv, 2));
+    vgeo.setIndex(vidx);
+    vgeo.computeVertexNormals();
+    this.vergeGeo = vgeo;
+    const verge = new THREE.Mesh(vgeo, new THREE.MeshStandardMaterial({ map: vergeTexture(), roughness: 1, metalness: 0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    verge.receiveShadow = true;
+    this.scene.add(verge);
 
     // Start / finish banner
     const s = this.track.sample(0.5);
@@ -319,13 +374,14 @@ export class World {
         this.scene.add(m.group);
       }
       const s = this.track.sample(rd.dist);
-      const lane = rd.me ? 0.6 : this._laneOffset(rd.id);
+      const hwHere = this.track.halfWidthAt(rd.dist);
+      const lane = Math.max(-hwHere + 0.6, Math.min(hwHere - 0.6, rd.me ? Math.min(0.6, hwHere * 0.3) : this._laneOffset(rd.id) * Math.min(1, hwHere / 3)));
       const nx = -s.dz, nz = s.dx; // right-hand normal
       m.group.position.set(s.x + nx * lane, s.y, s.z + nz * lane);
       m.group.rotation.set(0, 0, 0);
       m.group.rotateY(Math.atan2(s.dx, s.dz));
       m.group.rotateX(-Math.atan(s.grade));
-      m.animate(dt, rd.speed, rd.cadence);
+      m.animate(dt, rd.speed, rd.cadence, { wkg: rd.wkg || 0, grade: s.grade });
       if (m.label) {
         const d = this.camPos ? this.camPos.distanceTo(m.group.position) : 99;
         m.label.visible = d > 9;
@@ -351,10 +407,11 @@ export class World {
       let dA = ang - this.camAng;
       dA = Math.atan2(Math.sin(dA), Math.cos(dA));
       this.camAng += dA * (1 - Math.exp(-dt * 2.5));
+      const turn = dt > 0 ? (dA * (1 - Math.exp(-dt * 2.5))) / dt : 0; // rad/s
       const dir = this._dir.set(Math.sin(this.camAng), 0, Math.cos(this.camAng));
       m.group.visible = !this.rig.fpv;
       const warp = opts.warp || 0;
-      this.rig.update(dt, p, dir, (x, z) => this.terrainHeight(x, z), warp);
+      this.rig.update(dt, p, dir, (x, z) => this.terrainHeight(x, z), warp, { speed: opts.speed || 0, turn, rough: this.track.halfWidthAt(me.dist) < 2.2 ? 1 : 0 });
       if (this.google && (this.terrainMode === 'google' || this.terrainMode === 'mix')) {
         CLIP.center.value.set(p.x, p.z);
         this.google.update(p.x, p.z, me.dist);
@@ -362,8 +419,9 @@ export class World {
       this.camPos = this.camera.position;
       const f = this.track.sample(me.dist + 35);
       this.fx.update(dt, warp, this._focus.set(f.x, f.y + 1.0, f.z));
-      this.sun.position.copy(p).addScaledVector(this.sunDir, 120);
-      this.sun.target.position.copy(p);
+      this.env = this.atmo.update(dt, this.camera.position, p);
+      this.roadWet.value = this.env.wet;
+      WIND.k.value = 0.4 + this.atmo.state.windSpeed * 0.25;
     }
     this.fx.render();
   }

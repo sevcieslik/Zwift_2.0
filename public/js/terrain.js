@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { addClip } from './clip.js';
-import { findTrees, buildBoundaries, treeMeshes } from './objects.js';
+import { findTrees, buildBoundaries, treeMeshes, farForest, farForestMeshes, placeFarForest } from './objects.js';
 import { buildingMeshes, footprintIndex } from './buildings.js';
 
 // Real terrain from elevation tiles (Terrarium encoding) + satellite imagery, streamed around the rider.
@@ -296,6 +296,9 @@ export class Terrain {
     return keys;
   }
 
+  /** Distance from (x,z) to the edge of the carriageway (negative = on the road). */
+  roadEdge(x, z) { const [d, , i] = this.nearest(x, z, true); return i < 0 ? Infinity : d - this.track.hw[i]; }
+
   /** OSM building footprints along the route, in world metres: [{pts:[[x,z]..], c:[x,z], levels, h, kind, roof}] */
   _buildingList() {
     if (!this._buildingsP) {
@@ -343,7 +346,7 @@ export class Terrain {
     if (mine.length) { const bg = buildingMeshes(mine, heightFn, objT); group.add(bg); this.buildingCount = bg.userData.count; }
     this.objStage = 'trees';
     const trees = await findTrees(objT, cx, cz, size, {
-      nearRoad: (x, z) => this.nearest(x, z, true)[0],
+      nearRoad: (x, z) => this.roadEdge(x, z),
       isRoof: (x, z) => (inHouse && inHouse(x, z)) || (() => { const c = satRGB(x, z); return !!c && c[0] > c[1] + 8 && c[0] + c[1] + c[2] > 200; })(),
     });
     for (const t of trees) { // darker, bluer canopy in the imagery = conifer plantation
@@ -358,7 +361,7 @@ export class Terrain {
     const objF = await this._objSampler(17, this._tileKeysForRoad(cx, cz, size, 17));
     if (this.near !== group || !objF) return;
     const h = size / 2;
-    const b = await buildBoundaries(this.track, objF, heightFn, (x, z) => Math.abs(x - cx) < h && Math.abs(z - cz) < h, (x, z) => this.nearest(x, z, true)[0]);
+    const b = await buildBoundaries(this.track, objF, heightFn, (x, z) => Math.abs(x - cx) < h && Math.abs(z - cz) < h, (x, z) => this.roadEdge(x, z));
     if (this.near !== group || !b) return;
     group.add(b);
     this.boundaryCount = b.userData.count;
@@ -596,6 +599,7 @@ export class Terrain {
     if (road) { this.track.vis.set(road.vis); this.onRoad(road.i0, road.i1); } // road, riders and terrain change in the same frame
     this._swap('near', group);
     if (this.far) this._lowerFar();
+    this._placeFarForest();
     if (this.lidar && this.online) this._addObjects(group, cx, cz, heightFn, sat).catch((e) => console.warn('LiDAR objects failed', e));
     else this.objectsFor = group;
     return !!sampler;
@@ -631,6 +635,34 @@ export class Terrain {
     this.farCenter = { x: cx, z: cz };
     this._swap('far', mesh);
     this._lowerFar();
+    if (this.lidar && this.online) this._buildFarForest(mesh, cx, cz, sampler).catch((e) => console.warn('far forest', e));
+  }
+
+  /** Forests on the far terrain (outside the detailed patch), from coarse LiDAR canopy heights. */
+  async _buildFarForest(mesh, cx, cz) {
+    const size = 14000, z = 13;
+    const obj = await this._objSampler(z, this._tileKeysForArea(cx, cz, size, z));
+    if (!obj || this.far !== mesh) return;
+    const trees = farForest(obj, cx, cz, size);
+    if (this.far !== mesh) return;
+    const meshes = farForestMeshes(trees.length);
+    mesh.add(meshes.broad, meshes.conifer);
+    this.farForest = { mesh, meshes, trees };
+    this._placeFarForest();
+  }
+  /** Far trees stand on the far grid, everywhere except inside the detailed near patch (which has its own trees). */
+  _placeFarForest() {
+    const F = this.farForest;
+    if (!F || this.far !== F.mesh || !this.nearCenter) return;
+    const geo = F.mesh.geometry, base = geo.userData.baseY, seg = FAR.seg, size = FAR.size;
+    const fc = this.farCenter, nc = this.nearCenter, h = NEAR.size / 2 - 40;
+    const at = (ix, iz) => base[Math.max(0, Math.min(seg, iz)) * (seg + 1) + Math.max(0, Math.min(seg, ix))] - 3;
+    const heightFn = (x, z) => {
+      const gx = (x - (fc.x - size / 2)) / size * seg, gz = (z - (fc.z - size / 2)) / size * seg;
+      const ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix, fz = gz - iz;
+      return at(ix, iz) * (1 - fx) * (1 - fz) + at(ix + 1, iz) * fx * (1 - fz) + at(ix, iz + 1) * (1 - fx) * fz + at(ix + 1, iz + 1) * fx * fz;
+    };
+    this.farTreeCount = placeFarForest(F.meshes, F.trees, heightFn, (x, z) => Math.abs(x - nc.x) < h && Math.abs(z - nc.z) < h);
   }
 
   /** Sink the far mesh under the near patch so they don't intersect. */
