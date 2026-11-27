@@ -4,7 +4,6 @@ import { RiderModel } from './rider.js';
 import { Terrain } from './terrain.js';
 import { CameraRig } from './camera.js';
 import { WarpFX } from './warp.js';
-import { GoogleTerrain } from './google3d.js';
 import { CLIP } from './clip.js';
 import { WIND } from './objects.js';
 import { Atmosphere } from './atmosphere.js';
@@ -325,11 +324,18 @@ export class World {
   resetCamera() { this.rig.pos = null; }
 
   /** 'lidar' (own terrain), 'mix' (own terrain near + Google far) or 'google' (Photorealistic 3D Tiles only). */
-  setTerrainMode(mode, key) {
+  async setTerrainMode(mode, key) {
     this.terrainMode = mode;
     const wantG = mode === 'google' || mode === 'mix';
     if (wantG && key && !this.google) {
-      this.google = new GoogleTerrain({ key, scene: this.scene, camera: this.camera, renderer: this.renderer, track: this.track });
+      // loaded only when needed: a missing 3D Tiles library must never break the rest of the game
+      try {
+        const { GoogleTerrain } = await import('./google3d.js');
+        if (!this.google) this.google = new GoogleTerrain({ key, scene: this.scene, camera: this.camera, renderer: this.renderer, track: this.track });
+      } catch (e) {
+        console.warn('Google 3D Tiles library failed to load', e);
+        this.googleLoadError = e.message || String(e);
+      }
     }
     const g = wantG && !!this.google;
     if (this.google) {

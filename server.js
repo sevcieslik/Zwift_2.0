@@ -101,6 +101,9 @@ function getRoute(id) {
 
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 })); // always revalidate: new versions show up after a refresh
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules/three'), { maxAge: '7d' }));
+if (!fs.existsSync(path.join(__dirname, 'node_modules/3d-tiles-renderer/build/index.js'))) {
+  console.warn('Brak biblioteki 3d-tiles-renderer (Google 3D Tiles nie zadziała) – uruchom: npm install');
+}
 app.use('/vendor/3d-tiles-renderer', express.static(path.join(__dirname, 'node_modules/3d-tiles-renderer/build'), { maxAge: '7d' }));
 
 app.get('/api/routes', (_req, res) => res.json(listRoutes()));

@@ -399,8 +399,13 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   const TMODES = { lidar: '🗺️ Teren: Lidar', mix: '🗺️ Teren: Lidar + Google', google: '🗺️ Teren: Google 3D' };
   let terrainMode = config.googleKey && (tStore.get() === 'google' || tStore.get() === 'mix') ? tStore.get() : 'lidar';
   const baseAttrib = $('attrib').textContent;
-  function applyTerrain() {
-    const g = world.setTerrainMode(terrainMode, config.googleKey);
+  async function applyTerrain() {
+    const g = await world.setTerrainMode(terrainMode, config.googleKey);
+    if (terrainMode !== 'lidar' && !g) {
+      addChat({ system: true, text: `Google 3D Tiles: nie udało się załadować biblioteki (${world.googleLoadError || 'brak'}). Uruchom w folderze gry „npm install” i zrestartuj serwer. Wracam do terenu z lidaru.` });
+      terrainMode = 'lidar'; tStore.set('lidar');
+      return applyTerrain();
+    }
     $('terrainBtn').textContent = TMODES[terrainMode];
     $('terrainBtn').classList.toggle('on', terrainMode !== 'lidar');
     if (g && !g._hooked) {
