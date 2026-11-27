@@ -130,10 +130,11 @@ export class RiderModel {
     const shortsM = kit ? kit.thigh : std(a.shorts, 0.6);
     const pelvisM = kit ? kit.hips : std(a.shorts, 0.6);
     const sockM = kit ? kit.sock : std(a.socks, 0.8);
-    const shoeM = std(0xf4f4f4, 0.4);
+    const shoeM = kit ? kit.shoe : std(0xf4f4f4, 0.4);
     const headM = kit ? (a.headwear === 'cap' ? kit.cap : kit.helmet) : std(a.headColor, 0.35);
     const lens = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.9 });
-    this._mats = [frameM, carbon, black, rubber, silver, skin, shoeM, lens];
+    this._mats = [frameM, carbon, black, rubber, silver, skin, lens];
+    if (!kit) this._mats.push(shoeM);
     if (!kit) this._mats.push(jersey, sleeveM, shortsM, pelvisM, sockM, headM);
 
     // ---------- bike geometry ----------
@@ -287,8 +288,8 @@ export class RiderModel {
     }
 
     // shoulders (deltoids) blend the torso into the sleeves
-    const deltM = kit ? std(0xf4f4f4, 0.6) : std(a.jersey, 0.6);
-    this._mats.push(deltM);
+    const deltM = kit ? kit.shoulder : std(a.jersey, 0.6);
+    if (!kit) this._mats.push(deltM);
     for (const sx of [-1, 1]) {
       const d = new THREE.Mesh(new THREE.SphereGeometry(0.068, 18, 14), deltM);
       d.position.set(sx * 0.155, 1.285, 0.265); d.scale.set(0.95, 0.85, 1.05);
@@ -320,7 +321,7 @@ export class RiderModel {
       const calf = new THREE.Mesh(shapeGeo([[0, 0.05], [0.25, 0.06], [0.5, 0.05], [1, 0.033]], 1, 18), skin);
       const sock = new THREE.Mesh(shapeGeo([[0, 0.048], [0.5, 0.042], [1, 0.037]], 1, 12), sockM);
       const shoe = new THREE.Mesh(shapeGeo([[0, 0.042], [0.35, 0.05], [0.8, 0.044], [1, 0.026]], 1, 14), shoeM);
-      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.012, 0.26), black);
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.012, 0.26), kit ? kit.sole : black);
       body.add(thigh, thighSkin, knee, calf, sock, shoe, sole);
       this.legs.push({ sx, hip, thigh, thighSkin, knee, calf, sock, shoe, sole, T, S });
     }
