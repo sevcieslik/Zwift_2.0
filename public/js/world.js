@@ -6,6 +6,7 @@ import { CameraRig } from './camera.js';
 import { WarpFX } from './warp.js';
 import { GoogleTerrain } from './google3d.js';
 import { CLIP } from './clip.js';
+import { WIND } from './objects.js';
 
 // ---------- Route helpers ----------
 export class Track {
@@ -299,6 +300,7 @@ export class World {
    * riders: [{ id, name, color, dist, speed, cadence, me }]
    */
   render(dt, riders, opts = {}) {
+    WIND.time.value += Math.min(dt, 0.1);
     const seen = new Set();
     let me = null;
     for (const rd of riders) {

@@ -33,6 +33,36 @@ function listRoutes() {
 }
 const snapLogged = new Set();
 const roadFetches = new Map();
+const buildingFetches = new Map();
+function fetchBuildingsLater(id, route) {
+  if (process.env.OSM_SNAP === '0' || process.env.TILE_MOCK || buildingFetches.has(id) || osm.loadCached(ROUTES_DIR, id, 'buildings')) return;
+  console.log(`Trasa ${id}: pobieram budynki z OpenStreetMap (jednorazowo)…`);
+  const job = osm.fetchBuildings(route)
+    .then((b) => { osm.saveCached(ROUTES_DIR, id, b, 'buildings'); console.log(`Trasa ${id}: zapisano ${b.length} budynków do routes/${id}.buildings.json`); })
+    .catch((e) => { console.warn(`Trasa ${id}: nie udało się pobrać budynków OSM (${e.message})`); buildingFetches.delete(id); });
+  buildingFetches.set(id, job);
+}
+function mockBuildings(route) { // offline testing: a few houses beside the road
+  const out = [], R = 6371008.8, toRad = (d) => (d * Math.PI) / 180;
+  const kx = toRad(1) * R * Math.cos(toRad(route.origin.lat)), ky = toRad(1) * R;
+  for (let i = 3; i < route.x.length - 3; i += Math.max(1, Math.round(160 / route.step))) {
+    const dx = route.x[i + 2] - route.x[i - 2], dy = route.y[i + 2] - route.y[i - 2], L = Math.hypot(dx, dy) || 1;
+    const tx = dx / L, ty = dy / L, nx = -ty, ny = tx, side = i % 2 ? 1 : -1;
+    const cx = route.x[i] + nx * side * 16, cy = route.y[i] + ny * side * 16, w = 9 + (i % 5), d = 6 + (i % 3);
+    const pts = [[-w, -d], [w, -d], [w, d], [-w, d], [-w, -d]].map(([a, b]) => {
+      const x = cx + tx * a / 2 + nx * b / 2, y = cy + ty * a / 2 + ny * b / 2;
+      return [route.origin.lat + y / ky, route.origin.lon + x / kx];
+    });
+    out.push({ id: i, kind: 'house', levels: 1 + (i % 2), pts });
+  }
+  return out;
+}
+app.get('/api/routes/:id/buildings', (req, res) => {
+  const r = getRoute(req.params.id);
+  if (!r) return res.status(404).json({ error: 'Nie ma takiej trasy' });
+  if (process.env.TILE_MOCK) return res.json(mockBuildings(r));
+  res.json(osm.loadCached(ROUTES_DIR, req.params.id, 'buildings') || []);
+});
 function fetchRoadsLater(id, route) {
   if (process.env.OSM_SNAP === '0' || process.env.TILE_MOCK || roadFetches.has(id)) return;
   console.log(`Trasa ${id}: pobieram drogi z OpenStreetMap (jednorazowo)…`);
@@ -42,7 +72,8 @@ function fetchRoadsLater(id, route) {
       routeCache.delete(id); // next request rebuilds the route snapped to the roads
       console.log(`Trasa ${id}: zapisano ${roads.length} dróg do routes/${id}.roads.json`);
     })
-    .catch((e) => { console.warn(`Trasa ${id}: nie udało się pobrać dróg OSM (${e.message}) – trasa zostaje z GPS`); roadFetches.delete(id); });
+    .catch((e) => { console.warn(`Trasa ${id}: nie udało się pobrać dróg OSM (${e.message}) – trasa zostaje z GPS`); roadFetches.delete(id); })
+    .finally(() => fetchBuildingsLater(id, route)); // one Overpass job at a time
   roadFetches.set(id, job);
 }
 function getRoute(id) {
@@ -59,6 +90,7 @@ function getRoute(id) {
       const st = osm.snapRoute(route, roads);
       if (!snapLogged.has(id)) { snapLogged.add(id); console.log(`Trasa ${id}: dopasowana do dróg OSM (${st.coverage}% punktów, średnio ${st.meanOffset} m korekty)`); }
     } else fetchRoadsLater(id, route);
+    if (roads) fetchBuildingsLater(id, route);
     routeCache.set(id, route);
     return route;
   } catch (e) {

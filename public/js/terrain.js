@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { addClip } from './clip.js';
 import { findTrees, buildBoundaries, treeMeshes } from './objects.js';
+import { buildingMeshes, footprintIndex } from './buildings.js';
 
 // Real terrain from elevation tiles (Terrarium encoding) + satellite imagery, streamed around the rider.
 // Near patch: ~3 km, ~12 m grid, z13 elevation + z14 imagery, trees where the imagery shows forest.
@@ -295,6 +296,21 @@ export class Terrain {
     return keys;
   }
 
+  /** OSM building footprints along the route, in world metres: [{pts:[[x,z]..], c:[x,z], levels, h, kind, roof}] */
+  _buildingList() {
+    if (!this._buildingsP) {
+      this._buildingsP = fetch(`/api/routes/${encodeURIComponent(this.track.r.id)}/buildings`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((list) => list.map((b) => {
+          const pts = b.pts.map(([lat, lon]) => [(lon - this.lon0) * this.kx, -(lat - this.lat0) * this.ky]);
+          let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; }
+          return { ...b, pts, c: [cx / pts.length, cz / pts.length] };
+        }))
+        .catch(() => []);
+    }
+    return this._buildingsP;
+  }
+
   /** Trees, hedges and walls from LiDAR, added to a near patch once their data arrives. */
   async _addObjects(group, cx, cz, heightFn, sat) {
     try { await this._addObjectsInner(group, cx, cz, heightFn, sat); } finally { if (this.near === group) this.objectsFor = group; }
@@ -317,9 +333,18 @@ export class Terrain {
       const i = (py * sat.W + px) * 4;
       return [data[i], data[i + 1], data[i + 2]];
     };
+    // buildings (OpenStreetMap footprints + LiDAR height) first, so no tree grows out of a roof
+    this.objStage = 'buildings';
+    const h2 = size / 2;
+    const all = await this._buildingList();
+    const mine = all.filter((b) => { const [x, z] = b.c; return Math.abs(x - cx) < h2 && Math.abs(z - cz) < h2; });
+    const inHouse = mine.length ? footprintIndex(mine.map((b) => b.pts)) : null;
+    if (this.near !== group) return;
+    if (mine.length) { const bg = buildingMeshes(mine, heightFn, objT); group.add(bg); this.buildingCount = bg.userData.count; }
+    this.objStage = 'trees';
     const trees = await findTrees(objT, cx, cz, size, {
       nearRoad: (x, z) => this.nearest(x, z, true)[0],
-      isRoof: (x, z) => { const c = satRGB(x, z); return !!c && c[0] > c[1] + 8 && c[0] + c[1] + c[2] > 200; },
+      isRoof: (x, z) => (inHouse && inHouse(x, z)) || (() => { const c = satRGB(x, z); return !!c && c[0] > c[1] + 8 && c[0] + c[1] + c[2] > 200; })(),
     });
     for (const t of trees) { // darker, bluer canopy in the imagery = conifer plantation
       const c = satRGB(t.x, t.z);
