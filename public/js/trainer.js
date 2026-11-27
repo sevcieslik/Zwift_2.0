@@ -65,7 +65,15 @@ export class Trainer extends EventTarget {
     this.dispatchEvent(new Event('connected'));
   }
 
-  disconnect() { if (this.connected) this.device.gatt.disconnect(); }
+  disconnect() {
+    if (!this.device || !this.device.gatt.connected) return;
+    // FTMS: give control back (op 0x01 Reset) before dropping the link, so the trainer is free for other apps
+    const done = () => { try { this.device.gatt.disconnect(); } catch {} };
+    if (this.controlPoint) {
+      try { this.controlPoint.writeValue(new Uint8Array([0x01])).then(done, done); } catch { done(); }
+      setTimeout(done, 300);
+    } else done();
+  }
 
   /** Send simulated gradient to the trainer (FTMS op 0x11). grade e.g. 0.05 */
   setSimulation(grade, { crr = 0.004, cw = 0.51, wind = 0 } = {}) {
@@ -129,6 +137,7 @@ export class Trainer extends EventTarget {
 }
 
 export class HeartRate extends EventTarget {
+  disconnect() { try { if (this.device && this.device.gatt.connected) this.device.gatt.disconnect(); } catch {} }
   constructor() { super(); this.device = null; this.hr = 0; }
   get connected() { return !!(this.device && this.device.gatt.connected); }
   async connect() {

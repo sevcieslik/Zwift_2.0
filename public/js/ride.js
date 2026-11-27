@@ -515,6 +515,8 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     recorder.add({ x: s.x, y: -s.z, ele: s.ele, power: state.power, hr: state.hr, cadence: state.cadence, speed: physics.v });
   }, 1000);
   setInterval(() => { if (!state.saved && recorder.samples.length > 30) saveDraft(recorder.toJSON()); }, 30000);
+  // leaving the page: let go of the trainer and HR strap right away so another app (Zwift…) can pair
+  window.addEventListener('pagehide', () => { try { trainer.disconnect(); } catch {} try { hrm.disconnect(); } catch {} });
   window.addEventListener('beforeunload', (e) => {
     if (!state.saved && recorder.samples.length > 30) { saveDraft(recorder.toJSON()); e.preventDefault(); }
   });
