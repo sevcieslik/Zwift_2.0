@@ -353,16 +353,17 @@ export class RiderModel {
     // upper body: rotate around the hands (pivot) — standing lifts the hips up and forward
     const st = this.stand, tu = this.tuck;
     const P = this._pivot || (this._pivot = new THREE.Vector3(0, 0.9, 0.585));
-    const ang = st * 0.3 - tu * 0.1;
+    // positive X rotation about the hands lifts the hips (standing) / negative lowers the chest (tuck)
+    const ang = st * 0.12 - tu * 0.08;
     const b = this.body;
     b.position.set(0, 0, 0); b.rotation.set(0, 0, 0);
-    b.position.sub(P).applyAxisAngle(V(1, 0, 0), -ang).add(P);
-    b.position.z += st * 0.06; b.position.y += st * 0.04 - tu * 0.05;
-    b.rotation.x = -ang;
-    // rocking the bike side to side out of the saddle
-    const rock = st * Math.sin(this.crank) * 0.13;
+    b.position.sub(P).applyAxisAngle(V(1, 0, 0), ang).add(P);
+    b.position.z += st * 0.04;
+    b.rotation.x = ang;
+    // out of the saddle the bike sways under the rider (the body stays upright)
+    const rock = st * Math.sin(this.crank) * 0.07;
     this.root.rotation.z = rock;
-    b.rotation.z = -rock * 0.6 + (rpm > 0 ? Math.sin(this.crank) * 0.012 : 0);
+    b.rotation.z = -rock * 0.8 + (rpm > 0 ? Math.sin(this.crank) * 0.012 : 0);
     b.updateMatrix();
     this._inv = (this._inv || new THREE.Matrix4()).copy(b.matrix).invert();
     const L = 0.172;
