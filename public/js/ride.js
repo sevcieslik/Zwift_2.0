@@ -68,6 +68,10 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   let clockOffset = room.now - Date.now();
   world.atmo.clock = () => Date.now() + clockOffset; // shared weather in a group ride
 
+  // ---------- Test bots ----------
+  $('botAdd').onclick = () => socket.emit('bot:add', { count: +$('botCount').value, wkg: +$('botWkg').value, mode: $('botMode').value });
+  $('botClear').onclick = () => socket.emit('bot:clear');
+
   // ---------- Sound ----------
   const audio = new RideAudio();
   audio.start();

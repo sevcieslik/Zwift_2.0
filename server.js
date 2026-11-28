@@ -6,11 +6,13 @@ const express = require('express');
 const { Server } = require('socket.io');
 const { buildRoute } = require('./lib/gpx');
 const osm = require('./lib/osm');
+const bots = require('./lib/bots');
 const { tileHandler, MOCK: TILE_MOCK, setMockRoutes, lidarEnabled } = require('./lib/tiles');
 
 const PORT = process.env.PORT || 3000;
 const ROUTES_DIR = path.join(__dirname, 'routes');
 const MAX_RIDERS = parseInt(process.env.MAX_RIDERS || '20', 10);
+const MAX_BOTS = 12;
 
 const app = express();
 const server = http.createServer(app);
@@ -165,7 +167,7 @@ function riderPublic(p, now) {
   return {
     id: p.id, name: p.name, color: riderColor(p), appearance: p.appearance, weight: p.weight, height: p.height,
     dist: p.dist, lap: p.lap, speed: p.speed, power: p.power, cadence: p.cadence, hr: p.hr,
-    voice: p.voice, muted: p.muted, finished: p.finished, age: now - p.t,
+    voice: p.voice, muted: p.muted, finished: p.finished, age: now - p.t, bot: p.bot ? p.bot.mode : undefined,
   };
 }
 function roomPublic(room) {
@@ -255,6 +257,7 @@ io.on('connection', (socket) => {
     if (!room || room.hostId !== socket.id) return;
     const minutes = num(msg && msg.minutes, 0.5, 240, 5);
     room.event = { startAt: Date.now() + minutes * 60000, hostId: socket.id, participants: new Set([socket.id]) };
+    for (const b of room.riders.values()) if (b.bot) { b.dist = 0; b.lap = 0; b.bot.v = 0; b.power = 0; room.event.participants.add(b.id); }
     const host = room.riders.get(socket.id);
     io.to(room.code).emit('chat', { system: true, event: true, text: `${host.name} planuje jazdę grupową – start za ${minutes < 1 ? Math.round(minutes * 60) + ' s' : Math.round(minutes) + ' min'}. Kliknij „Dołącz do eventu”.` });
   });
@@ -268,6 +271,30 @@ io.on('connection', (socket) => {
     if (!room || !room.event || room.hostId !== socket.id) return;
     room.event = null;
     io.to(room.code).emit('chat', { system: true, text: 'Jazda grupowa została odwołana.' });
+  });
+
+  // ---------- bots (testing group rides) ----------
+  socket.on('bot:add', (msg = {}) => {
+    if (!room) return;
+    const me = room.riders.get(socket.id), route = getRoute(room.routeId);
+    if (!me || !route) return;
+    const have = [...room.riders.values()].filter((p) => p.bot).length;
+    const count = Math.max(0, Math.min(num(msg.count, 1, 12, 3) | 0, MAX_BOTS - have, MAX_RIDERS - room.riders.size));
+    const mode = ['steady', 'group', 'attack'].includes(msg.mode) ? msg.mode : 'group';
+    const wkg = num(msg.wkg, 1, 7, 3);
+    for (let i = 0; i < count; i++) {
+      // a little bunch around you: some ahead, some behind
+      const b = bots.makeBot(room, route, { wkg: wkg * (mode === 'steady' ? 1 : 0.93 + Math.random() * 0.14), mode, dist: me.dist + (i - count / 3) * 6 + Math.random() * 3, index: i });
+      b.lap = me.lap;
+      if (room.event && Date.now() < room.event.startAt) { b.dist = 0; b.lap = 0; room.event.participants.add(b.id); }
+      room.riders.set(b.id, b);
+    }
+    if (count) io.to(room.code).emit('chat', { system: true, text: `${me.name} dodaje ${count} ${count === 1 ? 'bota' : 'boty'} (${wkg.toFixed(1)} W/kg, ${({ steady: 'równe tempo', group: 'jazda w grupie', attack: 'z atakami' })[mode]})` });
+  });
+  socket.on('bot:clear', () => {
+    if (!room) return;
+    for (const [id, p] of room.riders) if (p.bot) { room.riders.delete(id); if (room.event) room.event.participants.delete(id); io.to(room.code).emit('room:left', { id }); }
+    io.to(room.code).emit('chat', { system: true, text: 'Boty usunięte.' });
   });
 
   socket.on('chat', (text) => {
@@ -316,9 +343,10 @@ io.on('connection', (socket) => {
     io.to(r.code).emit('room:left', { id: socket.id });
     io.to(r.code).emit('voice:leave', { id: socket.id });
     if (rider) io.to(r.code).emit('chat', { system: true, text: `${rider.name} ${explicit ? 'kończy jazdę' : 'rozłącza się'}` });
-    if (r.riders.size === 0) rooms.delete(r.code);
+    const humans = [...r.riders.values()].filter((p) => !p.bot);
+    if (humans.length === 0) rooms.delete(r.code); // bots alone don't keep a ride alive
     else if (r.hostId === socket.id) {
-      r.hostId = r.riders.keys().next().value;
+      r.hostId = humans[0].id;
       if (r.event) r.event.hostId = r.hostId;
     }
   }
@@ -328,6 +356,9 @@ io.on('connection', (socket) => {
 setInterval(() => {
   const now = Date.now();
   for (const r of rooms.values()) {
+    const route = getRoute(r.routeId);
+    if (route) bots.stepBots(r, route, (now - (r.lastBotStep || now)) / 1000, now);
+    r.lastBotStep = now;
     if (r.event && now > r.event.startAt + 60000) r.event = null;
     io.to(r.code).emit('room:state', {
       now, hostId: r.hostId, event: eventPublic(r),

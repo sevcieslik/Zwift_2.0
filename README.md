@@ -66,6 +66,10 @@ Zmienne środowiskowe (opcjonalne):
 
 W Walii gra pobiera też model powierzchni (LiDAR DSM 1 m, ten sam serwer co DTM). Różnica DSM − DTM to wysokość tego, co stoi na ziemi. Z niej gra stawia drzewa w miejscach prawdziwych koron, z prawdziwą wysokością i szerokością, a wzdłuż drogi żywopłoty (≥ 1,35 m) i kamienne murki (niższe). Poza Walią drzewa są zgadywane ze zdjęć satelitarnych jak wcześniej. Pierwsze wczytanie okolicy trwa dłużej (serwer czyta dwa pliki lidaru), potem kafle są w cache.
 
+### Boty testowe
+
+W panelu „Grupa” → **🤖 Boty testowe** każdy może dodać 1–8 botów (do 12 w przejeździe) z wybranym W/kg i stylem jazdy: „w grupie” (domykają luki, czekają na grupę), „równe tempo” (jak pace partner) albo „z atakami”. Boty są symulowane na serwerze tym samym modelem fizyki, więc wszyscy widzą je w tym samym miejscu. Jadą w tunelu za innymi, dają tunel, a przy zaplanowanej jeździe grupowej ustawiają się na starcie. Przycisk ✖ usuwa wszystkie boty.
+
 ### Pogoda, pora dnia, wiatr i dźwięk
 
 Przycisk **🌤️ Pogoda** w grze: pora dnia (także czas rzeczywisty i szybki cykl dnia), pogoda (słonecznie, pochmurno, mgła, deszcz albo „Zmienna”) i wiatr. „Zmienna” pogoda i wiatr wynikają z zegara serwera i nazwy przejazdu, więc cała grupa ma to samo. Wiatr zmienia prędkość (opór powietrza) i opór trenażera (FTMS wind speed). Deszcz moczy drogę, a sucha robi się po kilku minutach. Dźwięki (wiatr, opony, wolnobieg, łańcuch, deszcz, ptaki) są generowane w przeglądarce, wyłącza je przycisk **🔊 Dźwięk**.
@@ -144,6 +148,7 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/terrain.js` | Teren z danych wysokościowych i zdjęć satelitarnych, drzewa |
 | `public/js/camera.js` | Kamera: widoki, obrót myszą, zoom |
 | `public/js/warp.js` | Efekt hiper focus (post-processing, smugi, punkt skupienia) |
+| `lib/bots.js` | Boty testowe (symulacja na serwerze) |
 | `lib/osm.js` | Dopasowanie trasy GPS do dróg z OpenStreetMap |
 | `public/js/objects.js` | Drzewa, żywopłoty i murki z lidaru (DSM − DTM) |
 | `public/js/buildings.js` | Budynki z OSM + wysokość z lidaru |
