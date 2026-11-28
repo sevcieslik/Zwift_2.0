@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { addClip } from './clip.js';
+import { QUALITY } from './quality.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Objects standing on the ground, placed from LiDAR: nDSM = DSM (surface) - DTM (bare ground).
@@ -71,6 +72,7 @@ function stoneTexture() {
  * obj(x,z) -> metres above ground (NaN = unknown). Returns [{x, z, h, r}].
  */
 export async function findTrees(obj, cx, cz, size, { step = 3, max = 12000, nearRoad, isRoof } = {}) {
+  const limit = max; max = Infinity;
   const out = [];
   const h2 = size / 2;
   const nx = Math.floor(size / step), ny = nx;
@@ -115,7 +117,10 @@ export async function findTrees(obj, cx, cz, size, { step = 3, max = 12000, near
       out.push({ x, z, h: v, r: Math.max(1.3, Math.min(7, r * 0.8)) });
     }
   }
-  return out;
+  if (out.length <= limit) return out;
+  // too many for this quality level: keep an even sample everywhere (not just the first rows)
+  const keep = limit / out.length;
+  return out.filter((t) => (Math.abs(Math.sin(t.x * 12.9898 + t.z * 78.233) * 43758.5453) % 1) < keep);
 }
 
 /**
@@ -337,13 +342,13 @@ function cardsGeometry(cards, shade) {
 const rnd = (() => { let s = 12345; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
 /** Broadleaf crown: leaf cards spread over a unit ellipsoid, normals pointing out of the crown (soft, round shading). */
-function broadleafCrown(seedShift) {
+function broadleafCrown(seedShift, count = 64) {
   for (let i = 0; i < seedShift; i++) rnd();
   const cards = [], V = THREE.Vector3;
   const lumps = []; // 4-6 sub-clumps make an irregular outline instead of a ball
   const nl = 4 + Math.floor(rnd() * 3);
   for (let k = 0; k < nl; k++) lumps.push(new V((rnd() - 0.5) * 0.9, (rnd() - 0.3) * 0.7, (rnd() - 0.5) * 0.9));
-  for (let i = 0; i < 64; i++) {
+  for (let i = 0; i < count; i++) {
     const L = lumps[i % nl];
     const d = new V(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize();
     const c = L.clone().addScaledVector(d, 0.35 + rnd() * 0.3);
@@ -351,7 +356,7 @@ function broadleafCrown(seedShift) {
     const n0 = c.clone().normalize();
     const t = new V(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).cross(n0).normalize();
     const b = n0.clone().cross(t).normalize();
-    const sz = 0.42 + rnd() * 0.18;
+    const sz = (0.42 + rnd() * 0.18) * Math.sqrt(64 / count); // fewer cards -> bigger cards, same coverage
     cards.push({ c, u: t.multiplyScalar(sz), v: b.multiplyScalar(sz), n: (p) => p.clone().multiplyScalar(0.7).add(n0).normalize() });
   }
   return cardsGeometry(cards, (p) => Math.min(1.15, 0.45 + 0.45 * Math.min(1, p.length()) + 0.25 * p.y));
@@ -406,7 +411,7 @@ function addWind(m, amp, base) {
 export function treeMeshes(trees, heightFn, { addClip: clip = true } = {}) {
   const N = Math.max(1, trees.length);
   let trunkGeo = new THREE.CylinderGeometry(0.1, 0.17, 1, 7, 1, true); trunkGeo.translate(0, 0.5, 0);
-  const crowns = [broadleafCrown(0), broadleafCrown(7), broadleafCrown(19)];
+  const crowns = [broadleafCrown(0, QUALITY.cards), broadleafCrown(7, QUALITY.cards), broadleafCrown(19, QUALITY.cards)];
   const fir = coniferCrown();
   const leafMat = (tex, amp, base) => {
     const m = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.9, metalness: 0, vertexColors: true });
@@ -497,7 +502,7 @@ function crossGeometry() {
   return g;
 }
 /** Sample forest positions from a coarse canopy-height sampler. Returns [{x, z, h, conifer, seed}]. */
-export function farForest(obj, cx, cz, size, { step = 30, max = 40000 } = {}) {
+export function farForest(obj, cx, cz, size, { step = 30, max = QUALITY.farTrees } = {}) {
   const n = Math.floor(size / step), h2 = size / 2, out = [];
   const G = obj.grid ? obj.grid(cx - h2, cz - h2, step, n, n) : null;
   for (let j = 0; j < n && out.length < max; j++) for (let i = 0; i < n; i++) {

@@ -1,6 +1,7 @@
 import { World } from './world.js';
 import { RideAudio } from './audio.js';
 import { TIMES, WEATHERS, WINDS } from './atmosphere.js';
+import { QUALITY, setQuality } from './quality.js';
 import { Physics, draftFactor } from './physics.js';
 import { Trainer, HeartRate, bluetoothAvailable } from './trainer.js';
 import { Voice } from './voice.js';
@@ -94,6 +95,18 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     };
   };
   fill('wTime', TIMES, 'time'); fill('wWeather', WEATHERS, 'weather'); fill('wWind', WINDS, 'wind');
+  $('wQuality').value = QUALITY.level;
+  $('wQuality').onchange = () => {
+    setQuality($('wQuality').value);
+    world.applyQuality();
+    world.terrain.forceRebuild = true; // trees, forests and ground maps follow the new level
+    addChat({ system: true, text: `Grafika: ${QUALITY.label}.` });
+  };
+  { // frames per second, so you can see what the quality setting does
+    let frames = 0, t0 = performance.now();
+    const tick = () => { frames++; const t = performance.now(); if (t - t0 > 1000) { $('fpsInfo').textContent = `${Math.round((frames * 1000) / (t - t0))} klatek/s`; frames = 0; t0 = t; } requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }
   $('weatherBtn').onclick = () => { $('weatherPanel').classList.toggle('hidden'); $('weatherBtn').classList.toggle('on', !$('weatherPanel').classList.contains('hidden')); };
   const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   window.gpxRide = { voice, trainer, physics, recorder, world, get state() { return state; } };
@@ -114,7 +127,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     world.resetCamera();
     // jumped somewhere the world isn't loaded yet: wait for it instead of riding in an empty place
     const p = track.sample(state.dist);
-    if (world.terrainMode !== 'google' && !world.terrain.status(p.x, p.z).ground) startLoading(`km ${(state.dist / 1000).toFixed(1)}`);
+    if (!world.terrain.status(p.x, p.z).ground) startLoading(`km ${(state.dist / 1000).toFixed(1)}`);
   }
   // ---------- Loading screen: don't start riding in an empty world ----------
   const loading = { on: false, t0: 0 };
@@ -125,7 +138,7 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     el.classList.remove('hidden', 'fade');
     $('ldWhere').textContent = where || '';
     $('ldSkip').classList.add('hidden');
-    for (const id of ['ldGround', 'ldObjects', 'ldGoogle']) $(id).classList.remove('done', 'active');
+    for (const id of ['ldGround', 'ldObjects']) $(id).classList.remove('done', 'active');
   }
   function endLoading() {
     if (!loading.on) return;
@@ -138,30 +151,16 @@ export async function startRide({ code, routeId, profile, start, onError }) {
   setInterval(() => {
     if (!loading.on) return;
     const s = track.sample(state.dist);
-    const mode = world.terrainMode || 'lidar';
     const st = world.terrain.status(s.x, s.z);
-    const g = world.google, gWant = (mode === 'google' || mode === 'mix') && !!g;
-    let gDone = true;
-    if (gWant) {
-      const gs = (g.tiles && g.tiles.stats) || {};
-      gDone = g.errors > 0 || (g.loaded && (gs.downloading || 0) + (gs.parsing || 0) === 0 && (mode !== 'google' || g.calibrated));
-    }
-    const ground = mode === 'google' ? true : st.ground;
-    const objects = mode === 'google' ? true : st.objects;
+    const ground = st.ground, objects = st.objects;
     const mark = (id, done, active) => { $(id).classList.toggle('done', done); $(id).classList.toggle('active', !done && active); };
-    $('ldGround').classList.toggle('hidden', mode === 'google');
-    $('ldObjects').classList.toggle('hidden', mode === 'google');
-    $('ldGoogle').classList.toggle('hidden', !gWant);
     mark('ldGround', ground, true);
     mark('ldObjects', objects, ground);
-    mark('ldGoogle', gDone, true);
-    const parts = [ground, objects, gDone];
-    const frac = parts.filter(Boolean).length / parts.length;
-    $('ldBarIn').style.width = Math.max(4, Math.round(frac * 100 - (st.pending ? 3 : 0))) + '%';
+    $('ldBarIn').style.width = Math.max(4, Math.round(((ground ? 1 : 0) + (objects ? 1 : 0)) * 50 - (st.pending ? 3 : 0))) + '%';
     $('ldTiles').textContent = st.pending ? `pobieram dane: ${st.pending} w kolejce, ${st.loaded} gotowe` : (st.online ? '' : 'brak połączenia z serwerem map – teren zastępczy');
     const el = performance.now() - loading.t0;
     if (el > 12000) $('ldSkip').classList.remove('hidden');
-    if ((ground && objects && gDone && el > 600) || el > 180000) endLoading();
+    if ((ground && objects && el > 600) || el > 180000) endLoading();
   }, 250);
 
   const myAbs = () => state.lap * route.total + state.dist;
@@ -283,11 +282,6 @@ export async function startRide({ code, routeId, profile, start, onError }) {
       world.rig.next();
     } else if (e.key === 'm' || e.key === 'M') {
       if (voice.active) voice.setMuted(!voice.muted);
-    } else if ((e.key === 'PageUp' || e.key === 'PageDown') && world.google && world.terrainMode !== 'lidar') {
-      const m = world.google.nudge(e.key === 'PageUp' ? 1 : -1);
-      const g = world.google;
-      addChat({ system: true, text: `Google 3D: ręczna korekta ${m > 0 ? '+' : ''}${m} m (auto ${g.yOffset.toFixed(1)} m, ostatni pomiar ${g.lastDiff != null ? g.lastDiff.toFixed(1) : '–'} m)` });
-      e.preventDefault();
     } else if (e.key === 'Enter') {
       $('chatIn').focus(); e.preventDefault();
     }
@@ -398,47 +392,8 @@ export async function startRide({ code, routeId, profile, start, onError }) {
     location.href = '/';
   };
 
-  // ---------- Terrain source: own LiDAR terrain or Google Photorealistic 3D Tiles ----------
-  const tStore = { get() { try { return localStorage.getItem('gpxride.terrain'); } catch { return null; } }, set(v) { try { localStorage.setItem('gpxride.terrain', v); } catch { /* */ } } };
-  const TMODES = { lidar: '🗺️ Teren: Lidar', mix: '🗺️ Teren: Lidar + Google', google: '🗺️ Teren: Google 3D' };
-  let terrainMode = config.googleKey && (tStore.get() === 'google' || tStore.get() === 'mix') ? tStore.get() : 'lidar';
-  const baseAttrib = $('attrib').textContent;
-  async function applyTerrain() {
-    const g = await world.setTerrainMode(terrainMode, config.googleKey);
-    if (terrainMode !== 'lidar' && !g) {
-      addChat({ system: true, text: `Google 3D Tiles: nie udało się załadować biblioteki (${world.googleLoadError || 'brak'}). Uruchom w folderze gry „npm install” i zrestartuj serwer. Wracam do terenu z lidaru.` });
-      terrainMode = 'lidar'; tStore.set('lidar');
-      return applyTerrain();
-    }
-    $('terrainBtn').textContent = TMODES[terrainMode];
-    $('terrainBtn').classList.toggle('on', terrainMode !== 'lidar');
-    if (g && !g._hooked) {
-      g._hooked = true;
-      g.addEventListener('error', (e) => {
-        addChat({ system: true, text: `Google 3D Tiles: nie udało się wczytać (${e.detail}). Wracam do terenu z lidaru. Sprawdź klucz GOOGLE_MAPS_KEY, czy Map Tiles API jest włączone i czy w ograniczeniach klucza jest ten adres strony (np. http://localhost:3000/*). Szczegóły: F12 → Console.` });
-        if (!g.loaded) { terrainMode = 'lidar'; applyTerrain(); }
-      });
-      g.addEventListener('ready', () => addChat({ system: true, text: 'Google 3D Tiles połączone ✔ (v4)' }));
-    }
-  }
-  $('terrainBtn').onclick = () => {
-    if (!config.googleKey) {
-      addChat({ system: true, text: 'Google 3D Tiles: serwer nie ma klucza. Ustaw zmienną GOOGLE_MAPS_KEY i uruchom serwer ponownie (lokalnie: $env:GOOGLE_MAPS_KEY="…" przed npm start).' });
-      return;
-    }
-    terrainMode = terrainMode === 'lidar' ? 'mix' : terrainMode === 'mix' ? 'google' : 'lidar';
-    tStore.set(terrainMode);
-    applyTerrain();
-  };
-  if (!config.googleKey) $('terrainBtn').title = 'Brak klucza Google (GOOGLE_MAPS_KEY)';
-  applyTerrain();
+  try { localStorage.removeItem('gpxride.terrain'); } catch { /* old Google 3D Tiles setting */ }
   if (!loading.on) startLoading(state.dist > 100 ? `km ${(state.dist / 1000).toFixed(1)}` : 'Start trasy');
-  setInterval(() => {
-    if (terrainMode !== 'lidar' && world.google) {
-      const a = world.google.attributions();
-      $('attrib').textContent = 'Google' + (a ? ' · ' + a : '') + ' · ' + baseAttrib;
-    } else $('attrib').textContent = baseAttrib;
-  }, 2000);
 
   // ---------- Hyper focus (sprint) ----------
   const powerHist = []; // [t, W]

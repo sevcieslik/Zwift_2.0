@@ -56,6 +56,14 @@ export class Atmosphere {
     this._first = true;
   }
 
+  setShadowSize(n) {
+    this.shadowsOff = !n;
+    if (n && this.sun.shadow.mapSize.x !== n) {
+      this.sun.shadow.mapSize.set(n, n);
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    }
+  }
+
   _sky() {
     this.skyU = {
       top: { value: this.top }, horizon: { value: this.horizon }, sunDir: { value: this.sunDir },
@@ -218,7 +226,7 @@ export class Atmosphere {
     const direct = day * (1 - cloud * 0.8) * (1 - rain * 0.3);
     this.sun.intensity = 3.4 * direct * (1 + golden * 0.35);
     this.sun.color.copy(this.sunColor);
-    this.sun.castShadow = direct > 0.15;
+    this.sun.castShadow = direct > 0.15 && !this.shadowsOff;
     this.hemi.intensity = 0.25 + 1.35 * day * (1 - cloud * 0.25);
     this.hemi.color.copy(mixC(C(0xd8e8ff), C(0xdfe3e8), cloud)).lerp(C(0xffc890), golden * 0.45 * (1 - cloud)).lerp(C(0x4a5a80), night);
     this.hemi.groundColor.copy(mixC(C(0x4f5a3a), C(0x5a4a38), golden)).multiplyScalar(0.4 + 0.6 * day);

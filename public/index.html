@@ -6,7 +6,7 @@
   <title>GPX Ride – wspólna jazda klubowa</title>
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>" />
-  <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.min.js", "three/addons/": "/vendor/three/examples/jsm/", "3d-tiles-renderer": "/vendor/3d-tiles-renderer/index.js", "3d-tiles-renderer/plugins": "/vendor/3d-tiles-renderer/index.plugins.js", "@mapbox/vector-tile": "/vendor/vector-tile/index.js", "@mapbox/point-geometry": "/vendor/point-geometry/index.js", "pbf": "/vendor/pbf/index.js" } }</script>
+  <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.min.js", "three/addons/": "/vendor/three/examples/jsm/", "@mapbox/vector-tile": "/vendor/vector-tile/index.js", "@mapbox/point-geometry": "/vendor/point-geometry/index.js", "pbf": "/vendor/pbf/index.js" } }</script>
 </head>
 <body>
   <!-- ================= LOBBY ================= -->
@@ -88,7 +88,6 @@
         <ul class="ld-steps">
           <li id="ldGround"><span class="ld-ic"></span>Teren z lidaru i zdjęcia</li>
           <li id="ldObjects"><span class="ld-ic"></span>Budynki, drzewa, żywopłoty i murki</li>
-          <li id="ldGoogle" class="hidden"><span class="ld-ic"></span>Google 3D</li>
         </ul>
         <div class="ld-bar"><div id="ldBarIn"></div></div>
         <div class="ld-sub" id="ldTiles"></div>
@@ -172,9 +171,10 @@
         <div class="row"><span class="small">Pora dnia</span><select id="wTime"></select></div>
         <div class="row"><span class="small">Pogoda</span><select id="wWeather"></select></div>
         <div class="row"><span class="small">Wiatr</span><select id="wWind"></select></div>
+        <div class="row"><span class="small">Grafika</span><select id="wQuality"><option value="low">Niska</option><option value="medium">Średnia</option><option value="high">Wysoka</option></select></div>
+        <p class="muted small" id="fpsInfo"></p>
         <p class="muted small">„Zmienna” pogoda i wiatr są takie same dla całej grupy. Wiatr działa na prędkość i opór trenażera.</p>
       </div>
-      <button id="terrainBtn" class="small-btn">🗺️ Teren: Lidar</button>
       <button id="testBtn" class="small-btn">🧪 Tryb testowy</button>
       <div id="testPanel" class="test-panel hidden">
         <div class="row"><span class="small">Szybkość czasu</span>

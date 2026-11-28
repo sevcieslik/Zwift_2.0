@@ -47,6 +47,19 @@ const tileXY = (lat, lon, z) => {
 };
 const tile2lat = (y, z) => { const n = Math.PI - (2 * Math.PI * y) / 2 ** z; return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))); };
 
+// one shared worker for rasterising; falls back to an error (-> satellite imagery) if workers fail
+let worker = null, jobId = 0;
+const pending = new Map();
+function rasterize(msg, transfer) {
+  if (!worker) {
+    worker = new Worker(new URL('./landcover-worker.js', import.meta.url));
+    worker.onmessage = (e) => { const p = pending.get(e.data.id); if (p) { pending.delete(e.data.id); p.resolve(e.data); } };
+    worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'worker error')); pending.clear(); worker = null; };
+  }
+  const id = ++jobId;
+  return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); worker.postMessage({ ...msg, id }, transfer); });
+}
+
 const vtCache = new Map();
 function fetchVT(z, x, y) {
   const key = `${z}/${x}/${y}`;
@@ -82,70 +95,47 @@ export async function buildLandcover(frame, cx, cz, size, { z = 14, res = 1024 }
     const wx = (lon - frame.lon0) * frame.kx, wz = -(lat - frame.lat0) * frame.ky;
     return [(wx - (cx - h)) * pxPerM, (wz - (cz - h)) * pxPerM, wx, wz];
   };
-  // one canvas per class (white = covered); antialiased edges give soft weights
-  const cans = CLASSES.map(() => { const c = document.createElement('canvas'); c.width = c.height = res; const g = c.getContext('2d', { willReadFrequently: true }); g.fillStyle = '#fff'; g.strokeStyle = '#fff'; g.lineCap = 'round'; g.lineJoin = 'round'; return g; });
+  // draw commands in canvas pixels; the worker paints one mask per class (antialiased = soft weights)
+  const cmds = [];
   const waterPolys = [];
-  const polyPath = (g, tx, ty, ext, rings, keep) => {
-    g.beginPath();
-    for (const ring of rings) {
-      const pts = ring.map((p) => toCanvas(tx, ty, ext, p));
-      pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-      g.closePath();
-      if (keep) keep.push(pts.map(([, , wx, wz]) => [wx, wz]));
-    }
-  };
+  const ringsOf = (tx, ty, ext, geom, keep) => geom.map((ring) => {
+    const a = new Float32Array(ring.length * 2), world = keep ? [] : null;
+    ring.forEach((p, i) => { const [x, y, wx, wz] = toCanvas(tx, ty, ext, p); a[i * 2] = x; a[i * 2 + 1] = y; if (world) world.push([wx, wz]); });
+    if (keep) keep.push(world);
+    return a;
+  });
+  let t0 = performance.now();
   for (const [tx, ty, t] of tiles) {
+    if (performance.now() - t0 > 8) { await new Promise((r) => setTimeout(r, 0)); t0 = performance.now(); }
     const L = t.layers;
     const each = (name, fn) => { const l = L[name]; if (!l) return; for (let i = 0; i < l.length; i++) fn(l.feature(i), l.extent); };
-    each('landuse', (f, ext) => { const k = landuseClass(f.properties); if (k >= 0 && f.type === 3) { polyPath(cans[k], tx, ty, ext, f.loadGeometry()); cans[k].fill(); } });
-    each('landcover', (f, ext) => { const k = landcoverClass(f.properties); if (k >= 0 && f.type === 3) { polyPath(cans[k], tx, ty, ext, f.loadGeometry()); cans[k].fill(); } });
+    each('landuse', (f, ext) => { const k = landuseClass(f.properties); if (k >= 0 && f.type === 3) cmds.push({ c: k, fill: true, rings: ringsOf(tx, ty, ext, f.loadGeometry()) }); });
+    each('landcover', (f, ext) => { const k = landcoverClass(f.properties); if (k >= 0 && f.type === 3) cmds.push({ c: k, fill: true, rings: ringsOf(tx, ty, ext, f.loadGeometry()) }); });
     each('water', (f, ext) => {
       if (f.type !== 3 || f.properties.class === 'swimming_pool' || f.properties.brunnel === 'tunnel') return;
-      const rings = [];
-      polyPath(cans[C.water], tx, ty, ext, f.loadGeometry(), rings);
-      cans[C.water].fill();
-      waterPolys.push({ cls: f.properties.class, rings });
+      const keep = [];
+      cmds.push({ c: C.water, fill: true, rings: ringsOf(tx, ty, ext, f.loadGeometry(), keep) });
+      waterPolys.push({ cls: f.properties.class, rings: keep });
     });
     each('waterway', (f, ext) => {
       if (f.type !== 2 || f.properties.brunnel === 'tunnel') return;
       // narrow streams and ditches: damp, darker ground rather than open water
-      const g = cans[/river|canal/.test(f.properties.class) ? C.water : C.wet];
-      g.lineWidth = Math.max(1, (RIVER_W[f.properties.class] || 2) * pxPerM);
-      polyPath(g, tx, ty, ext, f.loadGeometry()); g.stroke();
+      cmds.push({ c: /river|canal/.test(f.properties.class) ? C.water : C.wet, fill: false, w: Math.max(1, (RIVER_W[f.properties.class] || 2) * pxPerM), rings: ringsOf(tx, ty, ext, f.loadGeometry()) });
     });
     each('transportation', (f, ext) => {
       if (f.type !== 2 || f.properties.brunnel === 'tunnel') return;
       const c = f.properties.class;
-      const dirt = DIRT_W[c] !== undefined || (c === 'service' && f.properties.surface === 'unpaved') || f.properties.surface === 'unpaved';
+      const dirt = DIRT_W[c] !== undefined || f.properties.surface === 'unpaved';
       const w = DIRT_W[c] || ROAD_W[c];
       if (!w) return;
-      const g = cans[dirt ? C.dirt : C.asphalt];
-      g.lineWidth = Math.max(1, w * pxPerM);
-      g.beginPath();
-      for (const line of f.loadGeometry()) line.forEach((p, i) => { const [x, y] = toCanvas(tx, ty, ext, p); i ? g.lineTo(x, y) : g.moveTo(x, y); });
-      g.stroke();
+      cmds.push({ c: dirt ? C.dirt : C.asphalt, fill: false, w: Math.max(1, w * pxPerM), rings: ringsOf(tx, ty, ext, f.loadGeometry()) });
     });
   }
-  await new Promise((r) => setTimeout(r, 0));
-  // combine: priority classes cover lower ones; leftover becomes grass
-  const N = res * res, masks = cans.map((g) => g.getImageData(0, 0, res, res).data);
-  const out = [new Uint8Array(N * 4), new Uint8Array(N * 4), new Uint8Array(N * 4)];
-  const waterMask = new Uint8Array(N);
-  let t0 = performance.now();
-  for (let i = 0; i < N; i++) {
-    if ((i & 65535) === 0 && performance.now() - t0 > 10) { await new Promise((r) => setTimeout(r, 0)); t0 = performance.now(); }
-    let left = 1;
-    for (let k = PRIORITY.length - 1; k >= 0 && left > 0.003; k--) {
-      const c = PRIORITY[k];
-      const a = masks[c][i * 4 + 3] / 255;
-      if (!a) continue;
-      const w = a * left;
-      out[c >> 2][i * 4 + (c & 3)] = Math.round(w * 255);
-      left -= w;
-      if (c === C.water) waterMask[i] = masks[c][i * 4 + 3];
-    }
-    if (left > 0.003) out[C.grass >> 2][i * 4 + (C.grass & 3)] += Math.round(left * 255);
-  }
+  // sort by class priority isn't needed: each class has its own mask; the worker combines them
+  const transfer = [];
+  for (const c of cmds) for (const r of c.rings) transfer.push(r.buffer);
+  const res2 = await rasterize({ res, ncls: NCLS, priority: PRIORITY, grass: C.grass, water: C.water, cmds }, transfer);
+  const out = [res2.w0, res2.w1, res2.w2], waterMask = res2.water;
   const textures = out.map((d) => {
     const t = new THREE.DataTexture(d, res, res, THREE.RGBAFormat);
     t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;

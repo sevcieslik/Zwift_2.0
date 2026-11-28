@@ -4,9 +4,9 @@ import { RiderModel } from './rider.js';
 import { Terrain } from './terrain.js';
 import { CameraRig } from './camera.js';
 import { WarpFX } from './warp.js';
-import { CLIP } from './clip.js';
 import { WIND } from './objects.js';
 import { Atmosphere } from './atmosphere.js';
+import { QUALITY } from './quality.js';
 
 // ---------- Route helpers ----------
 export class Track {
@@ -133,7 +133,7 @@ export class World {
   constructor(canvas, route, opts = {}) {
     this.track = new Track(route);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    this.renderer.setPixelRatio(Math.min(QUALITY.pixelRatio, window.devicePixelRatio));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -141,6 +141,7 @@ export class World {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.25, 60000);
     this.atmo = new Atmosphere(this.scene, { seed: opts.seed || route.id || 'gpx' });
+    this.atmo.setShadowSize(QUALITY.shadows);
     this.sunDir = this.atmo.sunDir;
     this.sun = this.atmo.sun;
 
@@ -159,6 +160,13 @@ export class World {
     window.addEventListener('resize', () => this.resize());
   }
 
+  /** Apply the current QUALITY preset to things that can change live (resolution, shadows). */
+  applyQuality() {
+    this.renderer.setPixelRatio(Math.min(QUALITY.pixelRatio, window.devicePixelRatio));
+    this.atmo.setShadowSize(QUALITY.shadows);
+    this.resize();
+  }
+
   resize() {
     const c = this.renderer.domElement;
     const w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight;
@@ -166,7 +174,6 @@ export class World {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (this.fx) this.fx.setSize(w, h);
-    if (this.google) this.google.resize();
   }
 
   _buildIndex() {
@@ -324,34 +331,6 @@ export class World {
 
   resetCamera() { this.rig.pos = null; }
 
-  /** 'lidar' (own terrain), 'mix' (own terrain near + Google far) or 'google' (Photorealistic 3D Tiles only). */
-  async setTerrainMode(mode, key) {
-    this.terrainMode = mode;
-    const wantG = mode === 'google' || mode === 'mix';
-    if (wantG && key && !this.google) {
-      // loaded only when needed: a missing 3D Tiles library must never break the rest of the game
-      try {
-        const { GoogleTerrain } = await import('./google3d.js');
-        if (!this.google) this.google = new GoogleTerrain({ key, scene: this.scene, camera: this.camera, renderer: this.renderer, track: this.track });
-      } catch (e) {
-        console.warn('Google 3D Tiles library failed to load', e);
-        this.googleLoadError = e.message || String(e);
-      }
-    }
-    const g = wantG && !!this.google;
-    if (this.google) {
-      this.google.visible = g;
-      if (!this.google._worldHook) {
-        this.google._worldHook = true;
-        this.google.addEventListener('ready', () => { if (this.terrainMode === 'google') this.terrain.hidden = true; });
-      }
-    }
-    CLIP.on.value = mode === 'mix' && g ? 1 : 0;
-    // keep our own ground until Google tiles have actually arrived
-    this.terrain.hidden = mode === 'google' && g && this.google.loaded;
-    return this.google;
-  }
-
   _laneOffset(id) {
     let h = 0;
     for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
@@ -419,10 +398,6 @@ export class World {
       m.group.visible = !this.rig.fpv;
       const warp = opts.warp || 0;
       this.rig.update(dt, p, dir, (x, z) => this.terrainHeight(x, z), warp, { speed: opts.speed || 0, turn, rough: this.track.halfWidthAt(me.dist) < 2.2 ? 1 : 0 });
-      if (this.google && (this.terrainMode === 'google' || this.terrainMode === 'mix')) {
-        CLIP.center.value.set(p.x, p.z);
-        this.google.update(p.x, p.z, me.dist);
-      }
       this.camPos = this.camera.position;
       const f = this.track.sample(me.dist + 35);
       this.fx.update(dt, warp, this._focus.set(f.x, f.y + 1.0, f.z));

@@ -1,15 +1,15 @@
 {
   "name": "gpx-ride",
   "version": "1.0.0",
-  "description": "Wspólna jazda po trasach GPX w 3D – smart trener, grupa, rozmowy głosowe",
+  "description": "Wsp\u00f3lna jazda po trasach GPX w 3D \u2013 smart trener, grupa, rozmowy g\u0142osowe",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "bake": "node scripts/bake.js"
   },
   "license": "MIT",
   "dependencies": {
     "@mapbox/vector-tile": "^3.0.0",
-    "3d-tiles-renderer": "^0.5.4",
     "express": "^4.22.3",
     "geotiff": "^2.1.3",
     "pbf": "^5.2.1",

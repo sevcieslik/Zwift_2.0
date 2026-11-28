@@ -82,20 +82,19 @@ Przycisk **🌤️ Pogoda** w grze: pora dnia (także czas rzeczywisty i szybki 
 
 Obrysy budynków pobierane są z OpenStreetMap (pas ~250 m wzdłuż trasy, plik `routes/<trasa>.buildings.json`, pobierany raz po drogach). Wysokość pochodzi z tagów OSM albo z lidaru. Prostokątne domy dostają dwuspadowy dach z łupka, a pozostałe płaski. Ściany są tynkowane albo kamienne, z oknami na każdym piętrze. Ten plik też warto dodać do repozytorium.
 
-### Google Photorealistic 3D Tiles (opcjonalnie)
+### Dane OSM w repozytorium i rozgrzewanie lidaru
 
-Przycisk **🗺️ Teren** w grze przełącza trzy tryby: **Lidar** (własny teren + zdjęcia satelitarne), **Lidar + Google** (własny teren i droga do ~200 m od kolarza, dalej fotorealistyczny model Google – zalecany) oraz **Google 3D** (tylko model Google; z poziomu drogi żywopłoty i drzewa wyglądają jak bryły). Do tego potrzebny jest klucz Google Map Tiles API:
+Kafle wektorowe OpenStreetMap potrzebne trasom leżą w repozytorium (`data/vt`, ok. 11 MB), więc gra niczego nie pobiera z OpenFreeMap. Po dodaniu nowej trasy: `npm run bake`, potem `git add data/vt`. Z tych samych kafli serwer przy starcie (w ułamku sekundy) wyciąga drogi do dopasowania trasy i obrysy budynków, bez Overpass.
 
-1. W Google Cloud Console utwórz projekt, dodaj konto rozliczeniowe i włącz **Map Tiles API**.
-2. Utwórz klucz API. W ograniczeniach ustaw: API → tylko Map Tiles API; Websites → `http://localhost:3000/*` oraz adres gry na Renderze, np. `https://twoja-gra.onrender.com/*`.
-3. Ustaw w Quotas limit „3D Tiles root requests per day” (np. 300) oraz budżet z alertem.
-4. Ustaw zmienną środowiskową `GOOGLE_MAPS_KEY`: lokalnie w PowerShell `$env:GOOGLE_MAPS_KEY="..."` przed `npm start`, a na Renderze w zakładce Environment.
+Lidar jest za duży do repozytorium (setki MB), dlatego serwer po starcie w tle „rozgrzewa” cache wzdłuż wszystkich tras, zaczynając od startu (wyłączenie: `PREWARM=0`). Pierwsze uruchomienie zajmuje kilkadziesiąt minut pracy w tle, potem wszystko jest na dysku.
 
-Klucz trafia do przeglądarki graczy, bo Google wymaga zapytań wprost z przeglądarki. Dlatego ograniczenie do adresów strony jest konieczne. Gra przesuwa układ współrzędnych za kolarzem (krzywizna Ziemi) i sama dopasowuje wysokość modelu Google do drogi. Jeśli kafle się nie wczytają, gra wraca do własnego terenu.
+### Jakość grafiki
+
+W panelu 🌤️ Pogoda → **Grafika**: Niska / Średnia / Wysoka (liczba drzew i liści w koronach, dalekie lasy, cienie, rozdzielczość). Obok widać liczbę klatek na sekundę. W konsoli (F12) gra wypisuje kroki budowania terenu dłuższe niż 30 ms.
 
 ### Dopasowanie trasy do dróg (OpenStreetMap)
 
-GPS z zegarka bywa przesunięty o kilka metrów względem drogi. W Google 3D wyglądało to tak, jakby jechało się poboczem albo przez murek. Przy pierwszym uruchomieniu serwer pobiera z OpenStreetMap (Overpass API) drogi wzdłuż trasy, zapisuje je w `routes/<trasa>.roads.json` i przesuwa każdy punkt trasy na oś najbliższej drogi biegnącej w tym samym kierunku. Warto dodać ten plik do repozytorium (`git add routes/*.roads.json`), żeby Render nie pobierał dróg przy każdym wdrożeniu. Wyłączenie: `OSM_SNAP=0`.
+GPS z zegarka bywa przesunięty o kilka metrów względem drogi. Serwer bierze drogi z kafli OSM w `data/vt` (awaryjnie z Overpass API), zapisuje je w `routes/<trasa>.roads.json` i przesuwa każdy punkt trasy na oś najbliższej drogi biegnącej w tym samym kierunku. Wyłączenie: `OSM_SNAP=0`.
 
 ## Dodawanie tras
 
@@ -160,8 +159,6 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/buildings.js` | Budynki z OSM + wysokość z lidaru |
 | `public/js/atmosphere.js` | Pora dnia, niebo z chmurami, mgła, deszcz, wiatr |
 | `public/js/audio.js` | Dźwięki jazdy (Web Audio, bez plików) |
-| `public/js/clip.js` | Przenikanie terenu własnego (blisko) i Google (daleko) |
-| `public/js/google3d.js` | Google Photorealistic 3D Tiles (3DTilesRendererJS) w układzie gry |
 | `lib/tiles.js` | Pobieranie kafli map przez serwer, z pamięcią podręczną |
 | `lib/lidar.js`, `lib/bng.js` | Kafle wysokości z lidaru (COG) i przeliczanie GPS → brytyjski układ współrzędnych |
 

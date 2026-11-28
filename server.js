@@ -86,7 +86,7 @@ function getRoute(id) {
   try {
     const route = buildRoute(fs.readFileSync(file, 'utf8'), id);
     route.id = id;
-    // put the GPS track onto the real road (OpenStreetMap), so it matches Google 3D Tiles / satellite imagery
+    // put the GPS track onto the real road (OpenStreetMap), so it matches the painted map and LiDAR
     const roads = osm.loadCached(ROUTES_DIR, id);
     if (roads) {
       const st = osm.snapRoute(route, roads);
@@ -106,10 +106,6 @@ for (const [url, dir] of [['/vendor/vector-tile', '@mapbox/vector-tile'], ['/ven
   app.use(url, express.static(path.join(__dirname, 'node_modules', dir), { maxAge: '7d' }));
 }
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules/three'), { maxAge: '7d' }));
-if (!fs.existsSync(path.join(__dirname, 'node_modules/3d-tiles-renderer/build/index.js'))) {
-  console.warn('Brak biblioteki 3d-tiles-renderer (Google 3D Tiles nie zadziała) – uruchom: npm install');
-}
-app.use('/vendor/3d-tiles-renderer', express.static(path.join(__dirname, 'node_modules/3d-tiles-renderer/build'), { maxAge: '7d' }));
 
 app.get('/api/routes', (_req, res) => res.json(listRoutes()));
 app.get('/api/routes/:id', (req, res) => {
@@ -126,9 +122,7 @@ app.get('/api/config', (_req, res) => {
       credential: process.env.TURN_CREDENTIAL,
     });
   }
-  // Google Map Tiles API key: sent to the browser by design (Google requires client-side requests);
-  // protect it with website restrictions in Google Cloud Console.
-  res.json({ iceServers, lidar: lidarEnabled(), googleKey: process.env.GOOGLE_MAPS_KEY || null });
+  res.json({ iceServers, lidar: lidarEnabled() });
 });
 app.get('/tiles/:src/:z/:x/:y', tileHandler);
 app.get('/vt/:z/:x/:y', require('./lib/vectortiles').vectorTileHandler); // OSM vector tiles (OpenFreeMap)
@@ -376,7 +370,32 @@ if (TILE_MOCK) {
   setMockRoutes(listRoutes().map((r) => parseGpx(fs.readFileSync(path.join(ROUTES_DIR, r.id + '.gpx'), 'utf8')).points));
 }
 
-server.listen(PORT, () => {
+// Roads (for snapping) and buildings come from the OpenStreetMap vector tiles (baked into data/vt or
+// downloaded once). Done before we start listening, so every rider gets the same snapped route.
+async function prepareOsm() {
+  if (process.env.OSM_SNAP === '0' || TILE_MOCK) return;
+  const { getTile } = require('./lib/vectortiles');
+  for (const r of fs.readdirSync(ROUTES_DIR).filter((f) => f.endsWith('.gpx'))) {
+    const id = r.slice(0, -4);
+    const haveRoads = osm.loadCached(ROUTES_DIR, id), haveB = osm.loadCached(ROUTES_DIR, id, 'buildings');
+    if (haveRoads && haveB) continue;
+    try {
+      const route = buildRoute(fs.readFileSync(path.join(ROUTES_DIR, r), 'utf8'), id);
+      const t0 = Date.now();
+      const { roads, buildings, tiles } = await osm.fromVectorTiles(route, getTile);
+      if (!haveRoads) osm.saveCached(ROUTES_DIR, id, roads);
+      if (!haveB) osm.saveCached(ROUTES_DIR, id, buildings, 'buildings');
+      routeCache.delete(id);
+      console.log(`Trasa ${id}: drogi (${roads.length}) i budynki (${buildings.length}) z kafli OSM (${tiles} kafli, ${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+    } catch (e) { console.warn(`Trasa ${id}: kafle OSM niedostępne (${e.message}) – spróbuję przez Overpass`); }
+  }
+}
+
+prepareOsm().finally(() => server.listen(PORT, () => {
   console.log(`GPX Ride działa na http://localhost:${PORT}${TILE_MOCK ? ' (teren: dane testowe)' : ''}`);
   console.log('Trasy:', listRoutes().map((r) => `${r.id} (${(r.total / 1000).toFixed(1)} km)`).join(', ') || 'brak');
-});
+  if (lidarEnabled() && !TILE_MOCK && process.env.PREWARM !== '0') {
+    const routes = listRoutes().map((r) => getRoute(r.id)).filter(Boolean);
+    setTimeout(() => require('./lib/prewarm').prewarm(routes).catch((e) => console.warn('Rozgrzewanie lidaru:', e.message)), 3000);
+  }
+}));

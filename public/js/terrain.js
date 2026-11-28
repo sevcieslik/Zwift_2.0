@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 import { addClip } from './clip.js';
+import { QUALITY } from './quality.js';
+
+/** Time a synchronous step; anything slow enough to make the ride stutter is reported in the console. */
+function timed(label, fn) {
+  const t = performance.now(), r = fn(), d = performance.now() - t;
+  if (d > 30) console.debug(`[teren] ${label}: ${Math.round(d)} ms`);
+  return r;
+}
 import { findTrees, buildBoundaries, treeMeshes, farForest, farForestMeshes, placeFarForest } from './objects.js';
 import { buildingMeshes, footprintIndex } from './buildings.js';
 import { buildLandcover, landMaterial, waterMeshes, lowerUnderWater } from './landcover.js';
@@ -344,9 +352,10 @@ export class Terrain {
     const mine = all.filter((b) => { const [x, z] = b.c; return Math.abs(x - cx) < h2 && Math.abs(z - cz) < h2; });
     const inHouse = mine.length ? footprintIndex(mine.map((b) => b.pts)) : null;
     if (this.near !== group) return;
-    if (mine.length) { const bg = buildingMeshes(mine, heightFn, objT); group.add(bg); this.buildingCount = bg.userData.count; }
+    if (mine.length) { const bg = timed(`budynki (${mine.length})`, () => buildingMeshes(mine, heightFn, objT)); group.add(bg); this.buildingCount = bg.userData.count; }
     this.objStage = 'trees';
     const trees = await findTrees(objT, cx, cz, size, {
+      max: QUALITY.trees,
       nearRoad: (x, z) => this.roadEdge(x, z),
       isRoof: (x, z) => (inHouse && inHouse(x, z)) || (() => { const c = satRGB(x, z); return !!c && c[0] > c[1] + 8 && c[0] + c[1] + c[2] > 200; })(),
     });
@@ -355,7 +364,7 @@ export class Terrain {
       if (c) t.conifer = (c[0] + c[1] + c[2]) / 3 < 55 && c[2] >= c[0] * 0.85;
     }
     if (this.near !== group) return;
-    group.add(treeMeshes(trees, heightFn));
+    group.add(timed(`drzewa (${trees.length})`, () => treeMeshes(trees, heightFn)));
     this.treeCount = trees.length;
 
     this.objStage = 'hedges';
@@ -586,7 +595,7 @@ export class Terrain {
     const road = sampler && this.lidar ? this._roadFromDem(sampler, cx, cz) : null;
     const vis = road ? road.vis : this.track.vis;
     // ground: painted from OpenStreetMap land cover; satellite imagery only if that isn't available
-    const lc = this.online && sampler ? await this._landcover(cx, cz, NEAR.size, 14, 1024) : null;
+    const lc = this.online && sampler ? await this._landcover(cx, cz, NEAR.size, 14, QUALITY.lcRes) : null;
     const sat = this.online && sampler && !lc ? await this._satCanvas(cx, cz, NEAR.size, NEAR.satZ) : null;
     this._setCandidates(cx, cz, NEAR.size);
     const heightFn = (x, z) => this._blend(x, z, sampler ? sampler(x, z) : NaN, vis);
@@ -599,8 +608,8 @@ export class Terrain {
     }
     const group = new THREE.Group();
     if (lc) {
-      const water = waterMeshes(lc, heightFn, this.skyColor || new THREE.Color(0xc9dcec));
-      lowerUnderWater(geo, lc, water.userData.lowered, (x, z) => this.roadEdge(x, z));
+      const water = timed('woda', () => waterMeshes(lc, heightFn, this.skyColor || new THREE.Color(0xc9dcec)));
+      timed('teren pod wodą', () => lowerUnderWater(geo, lc, water.userData.lowered, (x, z) => this.roadEdge(x, z)));
       group.add(water);
       group.userData.lc = lc;
       this.landcover = lc;
@@ -659,7 +668,7 @@ export class Terrain {
     this.farCenter = { x: cx, z: cz };
     this._swap('far', mesh);
     this._lowerFar();
-    if (this.lidar && this.online) this._buildFarForest(mesh, cx, cz, sampler).catch((e) => console.warn('far forest', e));
+    if (this.lidar && this.online && QUALITY.farTrees > 0) this._buildFarForest(mesh, cx, cz, sampler).catch((e) => console.warn('far forest', e));
   }
 
   /** Forests on the far terrain (outside the detailed patch), from coarse LiDAR canopy heights. */
@@ -667,7 +676,7 @@ export class Terrain {
     const size = 14000, z = 13;
     const obj = await this._objSampler(z, this._tileKeysForArea(cx, cz, size, z));
     if (!obj || this.far !== mesh) return;
-    const trees = farForest(obj, cx, cz, size);
+    const trees = timed('dalekie lasy (szukanie)', () => farForest(obj, cx, cz, size));
     if (this.far !== mesh) return;
     const meshes = farForestMeshes(trees.length);
     mesh.add(meshes.broad, meshes.conifer);
@@ -686,7 +695,7 @@ export class Terrain {
       const ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix, fz = gz - iz;
       return at(ix, iz) * (1 - fx) * (1 - fz) + at(ix + 1, iz) * fx * (1 - fz) + at(ix, iz + 1) * (1 - fx) * fz + at(ix + 1, iz + 1) * fx * fz;
     };
-    this.farTreeCount = placeFarForest(F.meshes, F.trees, heightFn, (x, z) => Math.abs(x - nc.x) < h && Math.abs(z - nc.z) < h);
+    this.farTreeCount = timed('dalekie lasy', () => placeFarForest(F.meshes, F.trees, heightFn, (x, z) => Math.abs(x - nc.x) < h && Math.abs(z - nc.z) < h));
   }
 
   /** Sink the far mesh under the near patch so they don't intersect. */
@@ -723,13 +732,15 @@ export class Terrain {
     if (this.near) this.near.visible = true;
 
     const ncx = Math.round(x / NEAR.snap) * NEAR.snap, ncz = Math.round(z / NEAR.snap) * NEAR.snap;
-    if (!this.nearBusy && (!this.nearCenter || this.nearCenter.x !== ncx || this.nearCenter.z !== ncz)) {
+    if (!this.nearBusy && (this.forceRebuild || !this.nearCenter || this.nearCenter.x !== ncx || this.nearCenter.z !== ncz)) {
       this.nearBusy = true;
+      if (this.forceRebuild) { this.forceRebuild = false; this.forceFar = true; }
       this._buildNear(ncx, ncz).catch((e) => console.warn('Terrain near build failed', e)).finally(() => { this.nearBusy = false; });
     }
     const fcx = Math.round(x / FAR.snap) * FAR.snap, fcz = Math.round(z / FAR.snap) * FAR.snap;
-    if (this.online && !this.farBusy && (!this.farCenter || this.farCenter.x !== fcx || this.farCenter.z !== fcz)) {
+    if (this.online && !this.farBusy && (this.forceFar || !this.farCenter || this.farCenter.x !== fcx || this.farCenter.z !== fcz)) {
       this.farBusy = true;
+      this.forceFar = false;
       this._buildFar(fcx, fcz).catch((e) => console.warn('Terrain far build failed', e)).finally(() => { this.farBusy = false; });
     }
   }
