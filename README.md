@@ -62,6 +62,10 @@ Zmienne środowiskowe (opcjonalne):
 | `TILE_CACHE_DIR` | Katalog pamięci podręcznej kafli (domyślnie katalog tymczasowy) |
 | `TILE_MOCK=1` | Teren testowy bez internetu (do pracy lokalnej) |
 
+### Malowany teren z OpenStreetMap
+
+Ziemia nie jest już rozmazanym zdjęciem satelitarnym. Serwer pobiera wektorowe kafle OpenStreetMap z OpenFreeMap (bez klucza, `/vt/z/x/y`, cache na dysku), a gra maluje z nich mapę pokrycia terenu: łąki, pola, wrzosowiska, las, skały i piargi, wodę, zabudowę, mokradła, piasek, asfalt bocznych dróg i ścieżki. Każda klasa ma ostrą, powtarzalną teksturę, granice są miękkie, strome zbocza robią się skaliste, a jeziora dostają płaską taflę wody z odbiciem nieba. Jeśli kafle są niedostępne, gra wraca do zdjęć satelitarnych. Atrybucja: „OpenFreeMap © OpenMapTiles, dane © OpenStreetMap”.
+
 ### Drzewa, żywopłoty i murki z lidaru
 
 W Walii gra pobiera też model powierzchni (LiDAR DSM 1 m, ten sam serwer co DTM). Różnica DSM − DTM to wysokość tego, co stoi na ziemi. Z niej gra stawia drzewa w miejscach prawdziwych koron, z prawdziwą wysokością i szerokością, a wzdłuż drogi żywopłoty (≥ 1,35 m) i kamienne murki (niższe). Poza Walią drzewa są zgadywane ze zdjęć satelitarnych jak wcześniej. Pierwsze wczytanie okolicy trwa dłużej (serwer czyta dwa pliki lidaru), potem kafle są w cache.
@@ -150,6 +154,8 @@ Rozmowa jest w układzie „każdy z każdym”, więc sprawdza się dobrze do o
 | `public/js/warp.js` | Efekt hiper focus (post-processing, smugi, punkt skupienia) |
 | `lib/bots.js` | Boty testowe (symulacja na serwerze) |
 | `lib/osm.js` | Dopasowanie trasy GPS do dróg z OpenStreetMap |
+| `public/js/landcover.js` | Pokrycie terenu z OSM (kafle wektorowe), tekstury, woda |
+| `lib/vectortiles.js` | Proxy i cache kafli wektorowych OpenFreeMap |
 | `public/js/objects.js` | Drzewa, żywopłoty i murki z lidaru (DSM − DTM) |
 | `public/js/buildings.js` | Budynki z OSM + wysokość z lidaru |
 | `public/js/atmosphere.js` | Pora dnia, niebo z chmurami, mgła, deszcz, wiatr |

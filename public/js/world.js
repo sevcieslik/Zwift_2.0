@@ -148,6 +148,7 @@ export class World {
     this.roadWet = { value: 0 };
     this._buildRoad();
     this.terrain = new Terrain(this.scene, this.track, (x, z, lim) => this.nearest(x, z, lim), { lidar: opts.lidar, onRoad: (a, b) => this.updateRoad(a, b) });
+    this.terrain.skyColor = this.atmo.horizon; // lakes reflect the sky
     this.riders = new Map();
     this.camPos = null;
     this.scene.add(this.camera); // camera children (warp streaks) must be in the scene

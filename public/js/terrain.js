@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { addClip } from './clip.js';
 import { findTrees, buildBoundaries, treeMeshes, farForest, farForestMeshes, placeFarForest } from './objects.js';
 import { buildingMeshes, footprintIndex } from './buildings.js';
+import { buildLandcover, landMaterial, waterMeshes, lowerUnderWater } from './landcover.js';
 
 // Real terrain from elevation tiles (Terrarium encoding) + satellite imagery, streamed around the rider.
 // Near patch: ~3 km, ~12 m grid, z13 elevation + z14 imagery, trees where the imagery shows forest.
@@ -367,6 +368,17 @@ export class Terrain {
     this.boundaryCount = b.userData.count;
   }
 
+  /** OSM land cover weight maps (OpenFreeMap vector tiles); null when unavailable. */
+  async _landcover(cx, cz, size, z, res) {
+    if (this.noVT) return null;
+    try {
+      const lc = await buildLandcover({ lat0: this.lat0, lon0: this.lon0, kx: this.kx, ky: this.ky }, cx, cz, size, { z, res });
+      if (!lc) this.vtFails = (this.vtFails || 0) + 1;
+      if (this.vtFails > 3) this.noVT = true; // server can't reach the vector tiles: stay on imagery
+      return lc;
+    } catch (e) { console.warn('landcover', e); return null; }
+  }
+
   _satTile(z, x, y) {
     const key = `${z}/${x}/${y}`;
     if (!this.satCache.has(key)) this.satCache.set(key, this._img(`/tiles/sat/${key}`).catch(() => null));
@@ -560,6 +572,7 @@ export class Terrain {
       old.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         if (o.material) { if (o.material.map && !o.userData.keepMap) o.material.map.dispose(); o.material.dispose(); }
+        if (o.userData.lc) for (const t of o.userData.lc.textures) t.dispose();
       });
     }
     this[slot] = obj;
@@ -572,7 +585,9 @@ export class Terrain {
     if (sampler) this._updateOffsets(sampler, cx, cz, NEAR.size);
     const road = sampler && this.lidar ? this._roadFromDem(sampler, cx, cz) : null;
     const vis = road ? road.vis : this.track.vis;
-    const sat = this.online && sampler ? await this._satCanvas(cx, cz, NEAR.size, NEAR.satZ) : null;
+    // ground: painted from OpenStreetMap land cover; satellite imagery only if that isn't available
+    const lc = this.online && sampler ? await this._landcover(cx, cz, NEAR.size, 14, 1024) : null;
+    const sat = this.online && sampler && !lc ? await this._satCanvas(cx, cz, NEAR.size, NEAR.satZ) : null;
     this._setCandidates(cx, cz, NEAR.size);
     const heightFn = (x, z) => this._blend(x, z, sampler ? sampler(x, z) : NaN, vis);
     const geo = await this._grid(cx, cz, NEAR.size, this.nearSeg, heightFn, sat, (e, ny) => this._fallbackColor(e, ny));
@@ -582,9 +597,16 @@ export class Terrain {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 8;
     }
-    const mesh = new THREE.Mesh(geo, terrainMaterial(tex, this.detail));
-    mesh.receiveShadow = true;
     const group = new THREE.Group();
+    if (lc) {
+      const water = waterMeshes(lc, heightFn, this.skyColor || new THREE.Color(0xc9dcec));
+      lowerUnderWater(geo, lc, water.userData.lowered, (x, z) => this.roadEdge(x, z));
+      group.add(water);
+      group.userData.lc = lc;
+      this.landcover = lc;
+    }
+    const mesh = new THREE.Mesh(geo, lc ? landMaterial(lc, this.detail) : terrainMaterial(tex, this.detail));
+    mesh.receiveShadow = true;
     group.add(mesh);
     if (!(this.lidar && this.online)) group.add(await this._trees(cx, cz, NEAR.size - 100, heightFn, sat));
     if (this.pos && !this._covers({ x: cx, z: cz }, this.pos.x, this.pos.z, 50)) {
@@ -618,7 +640,8 @@ export class Terrain {
       vals.sort((a, b) => a - b);
       this.farOffset = this.lidar ? 0 : (vals.length ? vals[vals.length >> 1] : 0);
     }
-    const sat = await this._satCanvas(cx, cz, FAR.size, FAR.satZ);
+    const lc = await this._landcover(cx, cz, FAR.size, 11, 1024);
+    const sat = lc ? null : await this._satCanvas(cx, cz, FAR.size, FAR.satZ);
     const geo = await this._grid(cx, cz, FAR.size, FAR.seg, (x, z) => {
       let h = sampler(x, z);
       h = Number.isFinite(h) ? h - this.farOffset : -50;
@@ -630,8 +653,9 @@ export class Terrain {
     geo.userData.baseY = Float32Array.from(geo.attributes.position.array.filter((_, i) => i % 3 === 1));
     let tex = null;
     if (sat) { tex = new THREE.CanvasTexture(sat.canvas); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; }
-    const mesh = new THREE.Mesh(geo, terrainMaterial(tex, this.detail));
+    const mesh = new THREE.Mesh(geo, lc ? landMaterial(lc, this.detail) : terrainMaterial(tex, this.detail));
     mesh.receiveShadow = false;
+    if (lc) mesh.userData.lc = lc;
     this.farCenter = { x: cx, z: cz };
     this._swap('far', mesh);
     this._lowerFar();

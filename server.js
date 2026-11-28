@@ -102,6 +102,9 @@ function getRoute(id) {
 }
 
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 })); // always revalidate: new versions show up after a refresh
+for (const [url, dir] of [['/vendor/vector-tile', '@mapbox/vector-tile'], ['/vendor/pbf', 'pbf'], ['/vendor/point-geometry', '@mapbox/point-geometry']]) {
+  app.use(url, express.static(path.join(__dirname, 'node_modules', dir), { maxAge: '7d' }));
+}
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules/three'), { maxAge: '7d' }));
 if (!fs.existsSync(path.join(__dirname, 'node_modules/3d-tiles-renderer/build/index.js'))) {
   console.warn('Brak biblioteki 3d-tiles-renderer (Google 3D Tiles nie zadziała) – uruchom: npm install');
@@ -128,6 +131,7 @@ app.get('/api/config', (_req, res) => {
   res.json({ iceServers, lidar: lidarEnabled(), googleKey: process.env.GOOGLE_MAPS_KEY || null });
 });
 app.get('/tiles/:src/:z/:x/:y', tileHandler);
+app.get('/vt/:z/:x/:y', require('./lib/vectortiles').vectorTileHandler); // OSM vector tiles (OpenFreeMap)
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 // ---------- Rooms ----------
